@@ -88,25 +88,7 @@ world.afterEvents.playerJoin.subscribe(event => {
         player.setDynamicProperty(ACTION_BAR_ENABLED_PROP, true);
     }
     
-    // プレイヤーIDと名前の対応表を更新
-    try {
-        // player.scoreboardIdentity が利用可能になるまで1tick待機
-        system.run(() => {
-            if (player.scoreboardIdentity) {
-                const nameMapStr = world.getDynamicProperty(PLAYER_NAME_MAP_PROP);
-                const nameMap = nameMapStr ? JSON.parse(nameMapStr) : {};
-                const playerId = player.scoreboardIdentity.id;
-
-                if (nameMap[playerId] !== player.name) {
-                    nameMap[playerId] = player.name;
-                    world.setDynamicProperty(PLAYER_NAME_MAP_PROP, JSON.stringify(nameMap));
-                }
-            }
-        });
-
-    } catch(e) {
-        console.error(`[MSS] Failed to update player name map: ${e}`);
-    }
+   
 
 
     for(const p of world.getAllPlayers()){
@@ -307,13 +289,24 @@ world.afterEvents.itemUse.subscribe(event => {
 
 /**
  * 1秒ごとに各プレイヤーのアクションバーを更新します。
+ * プレイヤー名マップの更新もここで行います。
  */
 system.runInterval(() => {
     try {
         const players = world.getAllPlayers();
         if (players.length === 0) return;
 
+        // --- 追加: マップの読み込み ---
+        // 毎回読み込みますが、書き込みは変更があった時だけに絞ります
+        let nameMapStr = world.getDynamicProperty(PLAYER_NAME_MAP_PROP);
+        let nameMap = nameMapStr ? JSON.parse(nameMapStr) : {};
+        let isMapDirty = false; // 保存が必要かどうかのフラグ
+        // ---------------------------
+
         const objective = world.scoreboard.getObjective(MINING_COUNT_OBJECTIVE);
+        
+        // objectiveがない場合は、ここでもマップ更新だけはしておくと安全ですが、
+        // 今回はスコアボード依存の処理がメインなので、objectiveがない場合はreturnのままで進めます
         if (!objective) return;
 
         // 全プレイヤーのスコアを取得し、ランキングを生成
@@ -322,12 +315,25 @@ system.runInterval(() => {
 
         // 各プレイヤーの情報を更新
         for (const player of players) {
+            
+            // --- 追加: 名前マップの更新チェック ---
+            // scoreboardIdentity が有効な場合のみチェック
+            if (player.scoreboardIdentity) {
+                const pId = player.scoreboardIdentity.id;
+                // マップにない、または名前が変わっている場合
+                if (nameMap[pId] !== player.name) {
+                    nameMap[pId] = player.name;
+                    isMapDirty = true; // 保存フラグを立てる
+                    world.sendMessage(`§a[MSS]§7プレイヤー名マップ更新：${player.name}`); // デバッグ用ログ
+                }
+            }
+            // ------------------------------------
+
             // アクションバー表示がOFFのプレイヤーはスキップ
             if (player.getDynamicProperty(ACTION_BAR_ENABLED_PROP) === false) {
                 continue;
             }
             if (player.scoreboardIdentity === undefined) {
-                
                 // IDがない = 初回またはデータロスト なので初期化
                 objective.setScore(player, 0);
                 for(const p of world.getAllPlayers()){
@@ -335,11 +341,10 @@ system.runInterval(() => {
                         p.sendMessage(`§a[MSSlog]§7リロード初期化（ID生成）：${player.name}`);
                     }
                 }
-
             }
 
             const myScore = objective.getScore(player) ?? 0;
-            const myRank = allScores.findIndex(s => s.participant.id === player.scoreboardIdentity.id) + 1;
+            const myRank = allScores.findIndex(s => s.participant.id === player.scoreboardIdentity?.id) + 1; // ?.id にして安全性を向上
 
             let nextRankInfo = "---";
             if (myRank > 1) {
@@ -354,7 +359,7 @@ system.runInterval(() => {
 
             let myMoney = "§cエラー";
             const objectiveMoney = world.scoreboard.getObjective("money");
-            if(!world.scoreboard.getObjective("money")){
+            if(!objectiveMoney){ // 修正: if check logic simplify
                 myMoney = "§c不明";
             }
             else{
@@ -364,11 +369,20 @@ system.runInterval(() => {
             const message = `§d採掘数: §f${myScore}個 §7| §d順位: §f${myRank}位 §7| §d${nextRankInfo} §7| §gお金: §f${myMoney}§7なこ`;
             player.onScreenDisplay.setActionBar(message);
         }
+
+        // --- 追加: 変更があった場合のみ保存 ---
+        if (isMapDirty) {
+            world.setDynamicProperty(PLAYER_NAME_MAP_PROP, JSON.stringify(nameMap));
+            // ログ出し（デバッグ用、不要なら削除）
+            // console.warn("[MSS] Player name map updated."); 
+        }
+        // ------------------------------------
+
     } catch (e) {
-        console.error(`[MiningRanking] Error in action bar update loop: ${e}`);
+        console.error(`[MiningRanking] Error in interval loop: ${e}`);
         for(const player of world.getAllPlayers()){
             if(player.hasTag(TAG_LOG)){
-                player.sendMessage(`§a[MSSlog]§cアクションバー更新エラー：${e}`);
+                player.sendMessage(`§a[MSSlog]§c定期処理エラー：${e}`);
             }
         }
     }

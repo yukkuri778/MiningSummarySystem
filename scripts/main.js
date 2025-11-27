@@ -352,7 +352,16 @@ system.runInterval(() => {
                 nextRankInfo = "独走中！";
             }
 
-            const message = `§d採掘数: §f${myScore}個 §7| §d順位: §f${myRank}位 §7| §d${nextRankInfo}`;
+            let myMoney = "§cエラー";
+            const objectiveMoney = world.scoreboard.getObjective("money");
+            if(!world.scoreboard.getObjective("money")){
+                myMoney = "§c不明";
+            }
+            else{
+                myMoney = objectiveMoney.getScore(player) ?? 0;
+            }
+
+            const message = `§d採掘数: §f${myScore}個 §7| §d順位: §f${myRank}位 §7| §d${nextRankInfo} §7| §gお金: §f${myMoney}§7なこ`;
             player.onScreenDisplay.setActionBar(message);
         }
     } catch (e) {

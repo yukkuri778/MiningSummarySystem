@@ -366,7 +366,7 @@ system.runInterval(() => {
                 myMoney = objectiveMoney.getScore(player) ?? 0;
             }
 
-            const message = `§d採掘数: §f${myScore}個 §7| §d順位: §f${myRank}位 §7| §d${nextRankInfo} §7| §gお金: §f${myMoney}§7なこ`;
+            const message = `§d採掘数: §f${myScore}個 §7| §d順位: §f${myRank}位 §7| §d${nextRankInfo} §7| §g所持金: §f${myMoney}§7なこ`;
             player.onScreenDisplay.setActionBar(message);
         }
 
@@ -446,7 +446,7 @@ function showRank(player) {
                 return nameMap[participant.id];
             }
             // それでも見つからなければ、元の表示名を返すか、固定の文字列を返す
-            return participant.displayName.startsWith("commands.") ? "(不明)" : participant.displayName;
+            return participant.displayName.startsWith("commands.") ? "(不明なオフラインプレイヤー)" : participant.displayName;
         };
         
         player.sendMessage("§a[MSS]§l§b--- 採掘数ランキング TOP10 ---");

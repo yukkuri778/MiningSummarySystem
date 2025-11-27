@@ -12,6 +12,7 @@ const WORLD_TOTAL_HOLDER = "world_total"; // ワールド全体の総採掘数
 // Dynamic Property のプレフィックス
 const BLOCK_COUNT_PREFIX = "block_count:"; // ブロックごとの採掘数
 const ACTION_BAR_ENABLED_PROP = "actionBar:enabled"; // アクションバー表示設定
+const PLAYER_NAME_MAP_PROP = "mss:player_name_map"; // プレイヤーIDと名前の対応表
 
 // コマンド用イベントID
 const RANK_EVENT_ID = "mss:rank";
@@ -86,6 +87,28 @@ world.afterEvents.playerJoin.subscribe(event => {
     if (player.getDynamicProperty(ACTION_BAR_ENABLED_PROP) === undefined) {
         player.setDynamicProperty(ACTION_BAR_ENABLED_PROP, true);
     }
+    
+    // プレイヤーIDと名前の対応表を更新
+    try {
+        // player.scoreboardIdentity が利用可能になるまで1tick待機
+        system.run(() => {
+            if (player.scoreboardIdentity) {
+                const nameMapStr = world.getDynamicProperty(PLAYER_NAME_MAP_PROP);
+                const nameMap = nameMapStr ? JSON.parse(nameMapStr) : {};
+                const playerId = player.scoreboardIdentity.id;
+
+                if (nameMap[playerId] !== player.name) {
+                    nameMap[playerId] = player.name;
+                    world.setDynamicProperty(PLAYER_NAME_MAP_PROP, JSON.stringify(nameMap));
+                }
+            }
+        });
+
+    } catch(e) {
+        console.error(`[MSS] Failed to update player name map: ${e}`);
+    }
+
+
     for(const p of world.getAllPlayers()){
         if(p.hasTag(TAG_LOG)){
             p.sendMessage(`§a[MSSlog]§7初参加：${player.name}`);
@@ -138,14 +161,18 @@ world.afterEvents.playerBreakBlock.subscribe(event => {
             // 花火を打ち上げる
             player.dimension.spawnEntity("minecraft:fireworks_rocket", player.location);
             // 経験値取得音を全プレイヤーに再生
-            world.playSound("random.pop", player.location, { volume: 0.8, pitch: 1.0, players: world.getAllPlayers() });
+            for (const p of world.getAllPlayers()) {
+                p.playSound("random.pop", player.location, { volume: 0.8, pitch: 1.0});
+            }
         }
 
         //以降１０万ごとにお祝い
         else if(newScore % 100000 == 0){ 
             world.sendMessage(`§a[MSS]§f§l§k!!!§r §b${player.name}§r が採掘数 §e${newScore}個§r を突破しました！ §k!!!§r`);
             player.dimension.spawnEntity("minecraft:fireworks_rocket", player.location);
-            world.playSound("random.pop", player.location, { volume: 0.8, pitch: 1.0, players: world.getAllPlayers() });
+            for (const p of world.getAllPlayers()) {
+                p.playSound("random.pop", player.location, { volume: 0.8, pitch: 1.0});
+            }
         }
 
         for(const p of world.getAllPlayers()){
@@ -175,12 +202,11 @@ world.afterEvents.playerBreakBlock.subscribe(event => {
         if (CELEBRATION_MILESTONES.includes(newWorldScore)) {
             // お祝いメッセージ
             world.sendMessage(`§a[MSS]§f§l§k!!!§r §dワールド総採掘数§r が §e${newWorldScore}個§r に到達しました！ §k!!!§r`);
-            // 全てのプレイヤーから花火を打ち上げる
+            // 全てのプレイヤーから花火を打ち上げる&音を再生
             for (const p of world.getAllPlayers()) {
                 p.dimension.spawnEntity("minecraft:fireworks_rocket", p.location);
+                p.playSound("random.levelup", player.location, { volume: 1.0, pitch: 0.8});
             }
-            // 経験値取得音を全プレイヤーに再生
-            world.playSound("random.levelup", player.location, { volume: 1.0, pitch: 0.8, players: world.getAllPlayers() });
         }
 
         //以降１００万ごとにお祝い
@@ -188,8 +214,8 @@ world.afterEvents.playerBreakBlock.subscribe(event => {
             world.sendMessage(`§a[MSS]§f§l§k!!!§r §dワールド総採掘数§r が §e${newWorldScore}個§r に到達しました！ §k!!!§r`);
             for (const p of world.getAllPlayers()) {
                 p.dimension.spawnEntity("minecraft:fireworks_rocket", p.location);
+                p.playSound("random.levelup", player.location, { volume: 1.0, pitch: 0.8});
             }
-            world.playSound("random.levelup", player.location, { volume: 1.0, pitch: 0.8, players: world.getAllPlayers() });
         }
 
     } catch (e) {
@@ -291,10 +317,7 @@ system.runInterval(() => {
         if (!objective) return;
 
         // 全プレイヤーのスコアを取得し、ランキングを生成
-        const allScores = objective.getScores().map(score => ({
-            name: score.participant.displayName,
-            score: score.score,
-        }));
+        const allScores = objective.getScores();
         allScores.sort((a, b) => b.score - a.score);
 
         // 各プレイヤーの情報を更新
@@ -316,7 +339,7 @@ system.runInterval(() => {
             }
 
             const myScore = objective.getScore(player) ?? 0;
-            const myRank = allScores.findIndex(s => s.name === player.name) + 1;
+            const myRank = allScores.findIndex(s => s.participant.id === player.scoreboardIdentity.id) + 1;
 
             let nextRankInfo = "---";
             if (myRank > 1) {
@@ -378,19 +401,46 @@ function showRank(player) {
         const scores = objective.getScores();
         scores.sort((a, b) => b.score - a.score);
 
+        // プレイヤー名を取得するためのヘルパーマップ
+        const nameMapStr = world.getDynamicProperty(PLAYER_NAME_MAP_PROP);
+        const nameMap = nameMapStr ? JSON.parse(nameMapStr) : {};
+        const onlinePlayers = world.getAllPlayers();
+
+        /**
+         * スコアボードの参加者情報からプレイヤー名を取得します。
+         * オンラインプレイヤーは現在の名前を、オフラインプレイヤーは保存された名前を返します。
+         * @param {import("@minecraft/server").ScoreboardIdentity} participant
+         * @returns {string}
+         */
+        const getPlayerNameFromParticipant = (participant) => {
+            // まずオンラインプレイヤーから探す
+            const onlinePlayer = onlinePlayers.find(p => p.scoreboardIdentity?.id === participant.id);
+            if (onlinePlayer) {
+                return onlinePlayer.name;
+            }
+            // オフラインなら保存されたマップから探す
+            if (nameMap[participant.id]) {
+                return nameMap[participant.id];
+            }
+            // それでも見つからなければ、元の表示名を返すか、固定の文字列を返す
+            return participant.displayName.startsWith("commands.") ? "(不明)" : participant.displayName;
+        };
+        
         player.sendMessage("§a[MSS]§l§b--- 採掘数ランキング TOP10 ---");
 
         // 上位10名を表示
         const top10 = scores.slice(0, 10);
         top10.forEach((entry, index) => {
-            player.sendMessage(`§e${index + 1}位: §f${entry.participant.displayName} §7- §r${entry.score}個`);
+            const playerName = getPlayerNameFromParticipant(entry.participant);
+            player.sendMessage(`§e${index + 1}位: §f${playerName} §7- §r${entry.score}個`);
         });
 
         player.sendMessage("§b--------------------");
 
         // 実行者の順位を表示
         const myScore = objective.getScore(player) ?? 0;
-        const myRank = scores.findIndex(s => s.participant.displayName === player.name) + 1;
+        const myRank = scores.findIndex(s => s.participant.id === player.scoreboardIdentity.id) + 1;
+
 
         if (myRank > 0) {
             player.sendMessage(`§aあなたの順位: ${myRank}位 (${myScore}個)`);
@@ -400,9 +450,9 @@ function showRank(player) {
     } catch (e) {
         player.sendMessage("§a[MSS]§cランキングの表示中にエラーが発生しました。");
         console.error(`[MiningRanking] Error in showRank: ${e}`);
-        for(const player of world.getAllPlayers()){
-            if(player.hasTag(TAG_LOG)){
-                player.sendMessage(`§a[MSSlog]§cランキング表示エラー：${e}`);
+        for(const p of world.getAllPlayers()){
+            if(p.hasTag(TAG_LOG)){
+                p.sendMessage(`§a[MSSlog]§cランキング表示エラー：${e}`);
             }
         }
     }
@@ -524,6 +574,10 @@ function executeReset() {
                 world.setDynamicProperty(propId, undefined);
             }
         }
+        
+        // 4. プレイヤーIDと名前の対応表をリセット
+        world.setDynamicProperty(PLAYER_NAME_MAP_PROP, undefined);
+
         console.log("[MiningRanking] All data has been reset.");
     } catch (e) {
         console.error(`[MiningRanking] Failed to execute reset: ${e}`);

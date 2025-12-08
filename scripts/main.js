@@ -20,7 +20,7 @@ const SUMMARY_EVENT_ID = "mss:summary";
 const RESET_EVENT_ID = "mss:reset";
 const CHECKV_EVENT_ID = "mss:checkV";
 
-const BEHAVIOR_PACK_VERSION = "1.2.0"; // パックのバージョン
+const BEHAVIOR_PACK_VERSION = "1.2.1"; // パックのバージョン
 
 // リセット確認用の待機時間（ミリ秒）
 const RESET_CONFIRMATION_TIMEOUT = 10000; // 10秒

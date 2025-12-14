@@ -144,7 +144,7 @@ world.afterEvents.playerBreakBlock.subscribe(event => {
             player.dimension.spawnEntity("minecraft:fireworks_rocket", player.location);
             // 経験値取得音を全プレイヤーに再生
             for (const p of world.getAllPlayers()) {
-                p.playSound("random.pop", player.location, { volume: 0.8, pitch: 1.0});
+                p.playSound("random.orb", p.location);
             }
         }
 
@@ -153,7 +153,7 @@ world.afterEvents.playerBreakBlock.subscribe(event => {
             world.sendMessage(`§a[MSS]§f§l§k!!!§r §b${player.name}§r が採掘数 §e${newScore}個§r を突破しました！ §k!!!§r`);
             player.dimension.spawnEntity("minecraft:fireworks_rocket", player.location);
             for (const p of world.getAllPlayers()) {
-                p.playSound("random.pop", player.location, { volume: 0.8, pitch: 1.0});
+                p.playSound("random.orb", p.location);
             }
         }
 
@@ -187,7 +187,7 @@ world.afterEvents.playerBreakBlock.subscribe(event => {
             // 全てのプレイヤーから花火を打ち上げる&音を再生
             for (const p of world.getAllPlayers()) {
                 p.dimension.spawnEntity("minecraft:fireworks_rocket", p.location);
-                p.playSound("random.levelup", player.location, { volume: 1.0, pitch: 0.8});
+                p.playSound("random.levelup", p.location);
             }
         }
 
@@ -196,7 +196,7 @@ world.afterEvents.playerBreakBlock.subscribe(event => {
             world.sendMessage(`§a[MSS]§f§l§k!!!§r §dワールド総採掘数§r が §e${newWorldScore}個§r に到達しました！ §k!!!§r`);
             for (const p of world.getAllPlayers()) {
                 p.dimension.spawnEntity("minecraft:fireworks_rocket", p.location);
-                p.playSound("random.levelup", player.location, { volume: 1.0, pitch: 0.8});
+                p.playSound("random.levelup", p.location);
             }
         }
 

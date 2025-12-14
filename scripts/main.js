@@ -14,6 +14,11 @@ const BLOCK_COUNT_PREFIX = "block_count:"; // ブロックごとの採掘数
 const ACTION_BAR_ENABLED_PROP = "actionBar:enabled"; // アクションバー表示設定
 const PLAYER_NAME_MAP_PROP = "mss:player_name_map"; // プレイヤーIDと名前の対応表
 
+// 表示モード定数
+const DISPLAY_MODE_ALL = 0;
+const DISPLAY_MODE_SIMPLE = 1;
+const DISPLAY_MODE_NONE = 2;
+
 // コマンド用イベントID
 const RANK_EVENT_ID = "mss:rank";
 const SUMMARY_EVENT_ID = "mss:summary";
@@ -85,7 +90,7 @@ world.afterEvents.playerJoin.subscribe(event => {
     const { player } = event;
     // アクションバー表示設定がまだない場合、デフォルトでONにする
     if (player.getDynamicProperty(ACTION_BAR_ENABLED_PROP) === undefined) {
-        player.setDynamicProperty(ACTION_BAR_ENABLED_PROP, true);
+        player.setDynamicProperty(ACTION_BAR_ENABLED_PROP, DISPLAY_MODE_ALL);
     }
     
    
@@ -264,15 +269,22 @@ world.afterEvents.itemUse.subscribe(event => {
     } 
     // 時計使用でアクションバー表示を切り替え
     else if (itemStack.typeId === 'minecraft:clock') {
-        const currentStatus = source.getDynamicProperty(ACTION_BAR_ENABLED_PROP);
-        // undefined (初回) または true なら false に、false なら true に切り替える
-        const newStatus = !(currentStatus ?? true);
+        let currentStatus = source.getDynamicProperty(ACTION_BAR_ENABLED_PROP);
+        
+        // 互換性対応: boolean または undefined の場合を数値に変換
+        if (currentStatus === true || currentStatus === undefined) currentStatus = DISPLAY_MODE_ALL;
+        else if (currentStatus === false) currentStatus = DISPLAY_MODE_NONE;
+        
+        // 次のモードへ (0 -> 1 -> 2 -> 0)
+        const newStatus = (currentStatus + 1) % 3;
         source.setDynamicProperty(ACTION_BAR_ENABLED_PROP, newStatus);
 
-        if (newStatus) {
-            source.sendMessage("§a[MSS]§aアクションバー表示をONにしました。");
+        if (newStatus === DISPLAY_MODE_ALL) {
+            source.sendMessage("§a[MSS]§aアクションバー表示：すべて");
+        } else if (newStatus === DISPLAY_MODE_SIMPLE) {
+             source.sendMessage("§a[MSS]§aアクションバー表示：採掘数と所持金のみ");
         } else {
-            source.sendMessage("§a[MSS]§cアクションバー表示をOFFにしました。");
+            source.sendMessage("§a[MSS]§cアクションバー表示：OFF");
             // OFFにした直後にアクションバーをクリアする
             source.onScreenDisplay.setActionBar("");
         }
@@ -329,10 +341,16 @@ system.runInterval(() => {
             }
             // ------------------------------------
 
+            // モード取得と正規化
+            let mode = player.getDynamicProperty(ACTION_BAR_ENABLED_PROP);
+            if (mode === true || mode === undefined) mode = DISPLAY_MODE_ALL;
+            else if (mode === false) mode = DISPLAY_MODE_NONE;
+
             // アクションバー表示がOFFのプレイヤーはスキップ
-            if (player.getDynamicProperty(ACTION_BAR_ENABLED_PROP) === false) {
+            if (mode === DISPLAY_MODE_NONE) {
                 continue;
             }
+
             if (player.scoreboardIdentity === undefined) {
                 // IDがない = 初回またはデータロスト なので初期化
                 objective.setScore(player, 0);
@@ -366,7 +384,13 @@ system.runInterval(() => {
                 myMoney = objectiveMoney.getScore(player) ?? 0;
             }
 
-            const message = `§d採掘数: §f${myScore}個 §7| §d順位: §f${myRank}位 §7| §d${nextRankInfo} §7| §g所持金: §f${myMoney}§7なこ`;
+            let message = "";
+            if (mode === DISPLAY_MODE_SIMPLE) {
+                 message = `§d採掘数: §f${myScore}個 §7| §g所持金: §f${myMoney}§7なこ`;
+            } else {
+                 // DISPLAY_MODE_ALL
+                 message = `§d採掘数: §f${myScore}個 §7| §d順位: §f${myRank}位 §7| §d${nextRankInfo} §7| §g所持金: §f${myMoney}§7なこ`;
+            }
             player.onScreenDisplay.setActionBar(message);
         }
 

@@ -1,4 +1,5 @@
 import { world, system } from "@minecraft/server";
+import { RouletteSystem } from "./roulette.js";
 
 // --- 定数定義 ---
 
@@ -24,8 +25,9 @@ const RANK_EVENT_ID = "mss:rank";
 const SUMMARY_EVENT_ID = "mss:summary";
 const RESET_EVENT_ID = "mss:reset";
 const CHECKV_EVENT_ID = "mss:checkV";
+const ROULETTE_EVENT_ID = "mss:roulette";
 
-const BEHAVIOR_PACK_VERSION = "1.2.2"; // パックのバージョン
+const BEHAVIOR_PACK_VERSION = "1.2.3"; // パックのバージョン
 
 // リセット確認用の待機時間（ミリ秒）
 const RESET_CONFIRMATION_TIMEOUT = 10000; // 10秒
@@ -93,9 +95,6 @@ world.afterEvents.playerJoin.subscribe(event => {
         player.setDynamicProperty(ACTION_BAR_ENABLED_PROP, DISPLAY_MODE_ALL);
     }
     
-   
-
-
     for(const p of world.getAllPlayers()){
         if(p.hasTag(TAG_LOG)){
             p.sendMessage(`§a[MSSlog]§7初参加：${player.name}`);
@@ -241,6 +240,8 @@ system.afterEvents.scriptEventReceive.subscribe(event => {
         handleResetRequest(sourceEntity);
     } else if (id === CHECKV_EVENT_ID) {
         showVersion(sourceEntity);
+    } else if (id === ROULETTE_EVENT_ID) {
+        RouletteSystem.start(sourceEntity);
     }
     for(const p of world.getAllPlayers()){
         if(p.hasTag(TAG_LOG)){

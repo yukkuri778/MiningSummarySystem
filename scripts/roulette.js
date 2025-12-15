@@ -1,29 +1,31 @@
 import { world, system } from "@minecraft/server";
 
-// --- 設定 ---
-const CONFIG = {
-    winRate: 0, // 当たり確率（パーセント: 0 ~ 100）
+// --- デフォルト設定 ---
+// スコアボードで設定されていない場合、この値が使われます
+const DEFAULT_CONFIG = {
+    winRate: 30,          // スコアボード: mss_rate
+    scrollSpeed: 2,       // スコアボード: mss_speed
+    reelLength: 40,       // スコアボード: mss_len
     
-    // 表示文字設定
-    symbolWin: "§4O§r",  // あたり（黄色）
-    symbolLose: "§8X§r",  // はずれ（灰色）
+    randomLengthRange: 20,
+    viewWidth: 7,
     
-    // 演出設定
-    scrollSpeed: 2,       // スクロール速度（tick単位。小さいほど速い。2推奨）
-    reelLength: 40,       // リール（全体の文字列）の基本長さ
-    randomLengthRange: 20,// 追加ランダム長さ（0～この値のフレーム数が追加される）
-    viewWidth: 7,         // 表示する幅（奇数推奨）
+    symbolWin: "§cO§r",
+    symbolLose: "§8X§r",
     
-    // サウンド
     soundTick: "random.click",
     soundWin: "random.levelup",
     soundLose: "random.break",
 
-    // 結果時の実行コマンド（空文字 "" なら何もしない）
-    // @s は実行プレイヤーになります
-    commandWin: "give @s diamond 1", 
-    commandLose: "",
+    // デフォルトの実行コマンド（IDごとの個別設定はタグ mss_win_<ID> を検知してコマンドブロックで行うのを推奨）
+    commandWin: "title @s actionbar §eおめでとう！", 
+    commandLose: "title @s actionbar §c残念...",
 };
+
+// 設定用スコアボード名
+const OBJ_RATE = "mss_rate";
+const OBJ_SPEED = "mss_speed";
+const OBJ_LEN = "mss_len";
 
 // ルーレット実行フラグ用プロパティ
 const ROULETTE_PLAYING_PROP = "mss:roulette_playing";
@@ -34,97 +36,121 @@ const ROULETTE_PLAYING_PROP = "mss:roulette_playing";
 export class RouletteSystem {
 
     /**
+     * システム初期化
+     * 設定用スコアボードが存在しない場合は作成します
+     */
+    static initialize() {
+        if (!world.scoreboard.getObjective(OBJ_RATE)) world.scoreboard.addObjective(OBJ_RATE, "MSS:確率(%)");
+        if (!world.scoreboard.getObjective(OBJ_SPEED)) world.scoreboard.addObjective(OBJ_SPEED, "MSS:速度(tick)");
+        if (!world.scoreboard.getObjective(OBJ_LEN)) world.scoreboard.addObjective(OBJ_LEN, "MSS:長さ");
+    }
+
+    /**
      * ルーレットを開始します。
      * @param {import("@minecraft/server").Player} player 
+     * @param {string} rouletteId ルーレットID（省略時は "default"）
      */
-    static start(player) {
-        // 多重実行防止
+    static start(player, rouletteId = "default") {
+        // 設定の取得（スコアボード > デフォルト値）
+        const config = this.getConfig(rouletteId);
 
         // 実行中フラグON
         player.setDynamicProperty(ROULETTE_PLAYING_PROP, true);
 
         // 1. 抽選
-        const isWin = (Math.random() * 100) < CONFIG.winRate;
+        const isWin = (Math.random() * 100) < config.winRate;
 
-        // 2. リール長の決定（ランダム性を追加）
-        const randomAdded = Math.floor(Math.random() * (CONFIG.randomLengthRange + 1));
-        const totalLength = CONFIG.reelLength + randomAdded;
+        // 2. リール長の決定
+        const randomAdded = Math.floor(Math.random() * (config.randomLengthRange + 1));
+        const totalLength = config.reelLength + randomAdded;
 
-        // 3. リール（文字列配列）の生成
-        const reel = this.generateReel(isWin, totalLength);
+        // 3. リール生成
+        const reel = this.generateReel(isWin, totalLength, config);
 
         // 4. アニメーション開始
-        this.playAnimation(player, reel, isWin, () => {
-            // 完了時のコールバック（フラグ解除）
+        this.playAnimation(player, reel, isWin, config, rouletteId, () => {
+            // 完了時のコールバック
+            if (player.isValid()) {
+                player.setDynamicProperty(ROULETTE_PLAYING_PROP, undefined);
+            }
         });
     }
 
     /**
-     * リールを生成します。
-     * @param {boolean} isWin 結果が当たりかどうか
-     * @param {number} totalLength リールの総長
-     * @returns {string[]} シンボルの配列
+     * 指定されたIDの設定を取得します。
+     * スコアボードに値があればそれを、なければデフォルト値を返します。
+     * 設定用ダミープレイヤー名: config_<ID>
      */
-    static generateReel(isWin, totalLength) {
-        const reel = [];
-        const centerIndex = Math.floor(CONFIG.viewWidth / 2);
-        
-        // 最終的な停止位置（リールの最後の方）
-        // 表示ウィンドウの中央に結果が来るように調整
-        // アニメーションは index 0 から始まり、(totalLength - viewWidth) まで進む
-        // 最後のフレームでウィンドウの中央（centerIndex）に来る要素が「結果」
-        
-        // 生成
-        for (let i = 0; i < totalLength; i++) {
-            // ランダムに配置
-            const isSymbolWin = Math.random() < 0.5;
-            reel.push(isSymbolWin ? CONFIG.symbolWin : CONFIG.symbolLose);
+    static getConfig(id) {
+        // 基本設定をコピー
+        const conf = { ...DEFAULT_CONFIG };
+        const holderName = `config_${id}`;
+
+        // スコアボードから値を取得して上書き
+        try {
+            const getVal = (objName) => {
+                const obj = world.scoreboard.getObjective(objName);
+                if (!obj) return null;
+                // ダミープレイヤーのスコア取得（participantが存在しないとundefinedになる場合があるためtry-catchやnullチェック）
+                try {
+                    return obj.getScore(holderName);
+                } catch {
+                    return undefined;
+                }
+            };
+
+            const rate = getVal(OBJ_RATE);
+            if (rate !== undefined && rate !== null) conf.winRate = rate;
+
+            const speed = getVal(OBJ_SPEED);
+            if (speed !== undefined && speed !== null) conf.scrollSpeed = speed;
+
+            const len = getVal(OBJ_LEN);
+            if (len !== undefined && len !== null) conf.reelLength = len;
+
+        } catch (e) {
+            console.warn(`[RouletteSystem] Failed to load config for ${id}: ${e}`);
         }
 
-        // 結果を確定させる位置を書き換える
-        // 最後の表示フレームの開始インデックス
-        const finalFrameStartIndex = totalLength - CONFIG.viewWidth;
-        // そのフレームの中央インデックス
-        const resultIndex = finalFrameStartIndex + centerIndex;
+        return conf;
+    }
 
-        reel[resultIndex] = isWin ? CONFIG.symbolWin : CONFIG.symbolLose;
+    static generateReel(isWin, totalLength, config) {
+        const reel = [];
+        const centerIndex = Math.floor(config.viewWidth / 2);
+        
+        for (let i = 0; i < totalLength; i++) {
+            const isSymbolWin = Math.random() < 0.5;
+            reel.push(isSymbolWin ? config.symbolWin : config.symbolLose);
+        }
+
+        const finalFrameStartIndex = totalLength - config.viewWidth;
+        const resultIndex = finalFrameStartIndex + centerIndex;
+        reel[resultIndex] = isWin ? config.symbolWin : config.symbolLose;
 
         return reel;
     }
 
-    /**
-     * アニメーションを再生します。
-     * @param {import("@minecraft/server").Player} player 
-     * @param {string[]} reel 
-     * @param {boolean} isWin 
-     * @param {() => void} [onComplete]
-     */
-    static playAnimation(player, reel, isWin, onComplete) {
+    static playAnimation(player, reel, isWin, config, rouletteId, onComplete) {
         let currentFrame = 0;
-        const maxFrames = reel.length - CONFIG.viewWidth;
-        const centerOffset = Math.floor(CONFIG.viewWidth / 2);
+        const maxFrames = reel.length - config.viewWidth;
+        const centerOffset = Math.floor(config.viewWidth / 2);
 
-        // アニメーションループ関数
         const loop = () => {
             if (!player.isValid()) {
                 if (onComplete) onComplete();
                 return;
             }
 
-            // 現在の表示部分を切り出し
-            const viewSlice = reel.slice(currentFrame, currentFrame + CONFIG.viewWidth);
-            
-            // 表示用文字列の構築
-            // 中央（centerOffset）の要素だけ [] で囲む
-            // 最後のフレーム（停止時）は括弧の色を黄色に変える
+            const viewSlice = reel.slice(currentFrame, currentFrame + config.viewWidth);
             const isLastFrame = currentFrame === maxFrames;
             const bracketColor = isLastFrame ? "§e" : "§f";
 
             const displayParts = viewSlice.map((symbol, index) => {
                 if (index === centerOffset) {
-                    return `${bracketColor}[§r ${symbol} ${bracketColor}]§r`; // 強調表示
+                    return `${bracketColor}[§r ${symbol} ${bracketColor}]§r`;
                 }
-                return "  " + symbol + "  "; // 他はスペースで調整（幅を合わせるため）
+                return "  " + symbol + "  ";
             });
             const displayString = displayParts.join("");
             
@@ -134,39 +160,24 @@ export class RouletteSystem {
                 fadeOutDuration: 0,
             });
             player.onScreenDisplay.updateSubtitle("");
+            player.playSound(config.soundTick, { pitch: 1.0 }); 
 
-            // 音を鳴らす
-            player.playSound(CONFIG.soundTick, { pitch: 1.0 }); 
-
-            // 次のフレームへ
             currentFrame++;
 
-            // 終了判定
             if (currentFrame > maxFrames) {
-                this.showResult(player, isWin, onComplete);
+                this.showResult(player, isWin, config, rouletteId, onComplete);
             } else {
-                // 次のフレームまでの遅延を計算（だんだん遅くする）
                 const progress = currentFrame / maxFrames;
-                const baseDelay = CONFIG.scrollSpeed; 
-                const addedDelay = 8 * (progress * progress * progress); // 終盤にグッと遅くする
+                const baseDelay = config.scrollSpeed; 
+                const addedDelay = 8 * (progress * progress * progress);
                 const delay = Math.max(1, Math.floor(baseDelay + addedDelay));
-
                 system.runTimeout(loop, delay);
             }
         };
-
-        // 初回実行
         loop();
     }
 
-    /**
-     * 結果を表示します。
-     * @param {import("@minecraft/server").Player} player 
-     * @param {boolean} isWin 
-     * @param {() => void} [onComplete]
-     */
-    static showResult(player, isWin, onComplete) {
-        // 少し待ってから結果発表
+    static showResult(player, isWin, config, rouletteId, onComplete) {
         system.runTimeout(() => {
             if (!player.isValid()) {
                 if (onComplete) onComplete();
@@ -184,36 +195,40 @@ export class RouletteSystem {
             player.onScreenDisplay.updateSubtitle(subtitle);
 
             if (isWin) {
-                player.playSound(CONFIG.soundWin);
+                player.playSound(config.soundWin);
                 player.dimension.spawnEntity("minecraft:fireworks_rocket", player.location);
                 
-                // 当たりコマンド実行
-                if (CONFIG.commandWin) {
-                    try {
-                        player.runCommandAsync(CONFIG.commandWin);
-                    } catch (e) {
-                        console.error(`[RouletteSystem] Win command error: ${e}`);
+                // タグの付与 (mss_win_<ID>)
+                const winTag = `mss_win_${rouletteId}`;
+                player.addTag("mss_win"); // 汎用タグ
+                player.addTag(winTag);    // ID専用タグ
+
+                // デフォルトコマンド実行
+                if (config.commandWin) player.runCommandAsync(config.commandWin);
+
+                // 1秒後にタグを削除
+                system.runTimeout(() => {
+                    if (player.isValid()) {
+                        player.removeTag("mss_win");
+                        player.removeTag(winTag);
                     }
-                }
+                }, 20);
+
             } else {
-                player.playSound(CONFIG.soundLose);
+                player.playSound(config.soundLose);
+                // はずれタグも一応つける
+                const loseTag = `mss_lose_${rouletteId}`;
+                player.addTag(loseTag);
 
-                // はずれコマンド実行
-                if (CONFIG.commandLose) {
-                    try {
-                        player.runCommandAsync(CONFIG.commandLose);
-                    } catch (e) {
-                        console.error(`[RouletteSystem] Lose command error: ${e}`);
-                    }
-                }
+                if (config.commandLose) player.runCommandAsync(config.commandLose);
+
+                system.runTimeout(() => {
+                    if (player.isValid()) player.removeTag(loseTag);
+                }, 20);
             }
 
-            // 演出終了後にコールバック実行
-            if (onComplete) {
-                // 結果表示の時間を考慮して少し待ってから完了とする
-                system.runTimeout(onComplete, 60);
-            }
+            if (onComplete) system.runTimeout(onComplete, 60);
 
-        }, 15); // ルーレット停止から少し間を置く
+        }, 5);
     }
 }

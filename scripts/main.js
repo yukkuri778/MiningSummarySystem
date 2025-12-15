@@ -27,7 +27,7 @@ const RESET_EVENT_ID = "mss:reset";
 const CHECKV_EVENT_ID = "mss:checkV";
 const ROULETTE_EVENT_ID = "mss:roulette";
 
-const BEHAVIOR_PACK_VERSION = "1.2.3"; // パックのバージョン
+const BEHAVIOR_PACK_VERSION = "1.2.2"; // パックのバージョン
 
 // リセット確認用の待機時間（ミリ秒）
 const RESET_CONFIRMATION_TIMEOUT = 10000; // 10秒
@@ -81,6 +81,9 @@ world.afterEvents.worldInitialize.subscribe(() => {
     if (!world.scoreboard.getObjective(WORLD_MINING_COUNT_OBJECTIVE)) {
         world.scoreboard.addObjective(WORLD_MINING_COUNT_OBJECTIVE, "ワールド統計");
     }
+
+    // ルーレット初期化（スコアボード作成）
+    RouletteSystem.initialize();
 });
 
 // --- イベントリスナー ---
@@ -241,7 +244,9 @@ system.afterEvents.scriptEventReceive.subscribe(event => {
     } else if (id === CHECKV_EVENT_ID) {
         showVersion(sourceEntity);
     } else if (id === ROULETTE_EVENT_ID) {
-        RouletteSystem.start(sourceEntity);
+        // メッセージをIDとして扱う。空なら "default"
+        const rouletteId = event.message && event.message.trim().length > 0 ? event.message.trim() : "default";
+        RouletteSystem.start(sourceEntity, rouletteId);
     }
     for(const p of world.getAllPlayers()){
         if(p.hasTag(TAG_LOG)){

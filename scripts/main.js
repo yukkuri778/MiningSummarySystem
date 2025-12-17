@@ -58,7 +58,8 @@ const EXCLUDED_BLOCKS = new Set([
     "minecraft:lever",
     "minecraft:leaf_litter",
     "minecraft:tripwire_hook",
-    "minecraft:tripwire"
+    "minecraft:tripwire",
+    "minecraft:netherrack"
 ]);
 
 // --- グローバル変数 ---

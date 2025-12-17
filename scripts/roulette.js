@@ -18,8 +18,8 @@ const DEFAULT_CONFIG = {
     soundLose: "random.break",
 
     // デフォルトの実行コマンド（IDごとの個別設定はタグ mss_win_<ID> を検知してコマンドブロックで行うのを推奨）
-    commandWin: "title @s actionbar §eおめでとう！", 
-    commandLose: "title @s actionbar §c残念...",
+    commandWin: "", 
+    commandLose: "",
 };
 
 // 設定用スコアボード名

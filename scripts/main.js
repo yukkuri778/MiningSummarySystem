@@ -27,7 +27,7 @@ const RESET_EVENT_ID = "mss:reset";
 const CHECKV_EVENT_ID = "mss:checkV";
 const ROULETTE_EVENT_ID = "mss:roulette";
 
-const BEHAVIOR_PACK_VERSION = "1.2.2"; // パックのバージョン
+const BEHAVIOR_PACK_VERSION = "1.3.0"; // パックのバージョン
 
 // リセット確認用の待機時間（ミリ秒）
 const RESET_CONFIRMATION_TIMEOUT = 10000; // 10秒

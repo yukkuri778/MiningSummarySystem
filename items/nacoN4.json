@@ -1,0 +1,14 @@
+{
+  "format_version": "1.21.10",
+  "minecraft:item": {
+    "description": {
+      "identifier": "naco:naco_N4"
+    },
+    "components": {
+      "minecraft:icon": "nacoN4",
+      "minecraft:display_name": {
+        "value": "§8N§f「コーヒーはいりましたよ」"
+      }
+    }
+  }
+}

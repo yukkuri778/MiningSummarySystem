@@ -1,0 +1,14 @@
+{
+  "format_version": "1.21.10",
+  "minecraft:item": {
+    "description": {
+      "identifier": "naco:naco_N1"
+    },
+    "components": {
+      "minecraft:icon": "nacoN1",
+      "minecraft:display_name": {
+        "value": "§8N§f「たべたたべたぁ...」"
+      }
+    }
+  }
+}

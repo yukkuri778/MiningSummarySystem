@@ -1,0 +1,14 @@
+{
+  "format_version": "1.21.10",
+  "minecraft:item": {
+    "description": {
+      "identifier": "naco:naco_R2"
+    },
+    "components": {
+      "minecraft:icon": "nacoR2",
+      "minecraft:display_name": {
+        "value": "§5R§f「おはなのおいすいいにおい」"
+      }
+    }
+  }
+}

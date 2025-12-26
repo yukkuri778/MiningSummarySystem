@@ -6,7 +6,7 @@ import { world, system } from "@minecraft/server";
 const CONFIG = {
     scrollSpeed: 2,       // 基本のスクロール速度（tick）
     baseReelLength: 40,   // リールの基本の長さ
-    randomLengthRange: 20,// リールの長さに加えるランダム幅
+    randomLengthRange: 30,// リールの長さに加えるランダム幅
     viewWidth: 7,         // 表示する幅（奇数を推奨）
     soundTick: "random.click", // 回っているときの音
 };
@@ -23,7 +23,7 @@ const CONFIG = {
 const SYMBOL_TABLE = [
     {
         id: "secret",
-        weight: 2, 
+        weight: 0, 
         display: "§6§l777§r",
         commands: [
             "give @s diamond 10",
@@ -36,7 +36,7 @@ const SYMBOL_TABLE = [
     },
     {
         id: "SSR",
-        weight: 10,
+        weight: 0,
         display: "§bSSR§r",
         commands: [
             "give @s diamond 1",
@@ -52,9 +52,10 @@ const SYMBOL_TABLE = [
         weight: 30,
         display: "§cR§r",
         commands: [
-            "give @s apple 3",
-            "give @s iron_ingot 5",
-            "give @s coal 10"
+            "give @s naco:naco_R1 1",
+            "give @s naco:naco_R2 1",
+            "give @s naco:naco_R3 1",
+            "give @s naco:naco_R4 1"
         ],
         sound: "random.orb",
         title: "§cR",
@@ -62,12 +63,13 @@ const SYMBOL_TABLE = [
     },
     {
         id: "Normal",
-        weight: 58,
-        display: "§8C§r",
+        weight: 70,
+        display: "§8N§r",
         commands: [
-            "give @s cookie 1",
-            "give @s bread 1",
-            "give @s stick 2"
+            "give @s naco:naco_N1 1",
+            "give @s naco:naco_N2 1",
+            "give @s naco:naco_N3 1",
+            "give @s naco:naco_N4 1"
         ],
         sound: "random.break",
         title: "§8N",
@@ -88,11 +90,8 @@ export class NacoRoulette {
      * @param {import("@minecraft/server").Player} player 
      */
     static start(player) {
-        // すでに実行中ならキャンセル
-        if (player.getDynamicProperty(ROULETTE_PLAYING_PROP)) return;
-
         // 実行中フラグON
-        player.setDynamicProperty(ROULETTE_PLAYING_PROP, true);
+        player.addTag("nacoroulettePlaying");
 
         // 1. リール長の決定 (基本長 + ランダム)
         const totalLength = CONFIG.baseReelLength + Math.floor(Math.random() * (CONFIG.randomLengthRange + 1));
@@ -104,7 +103,7 @@ export class NacoRoulette {
         this.playAnimation(player, reel, () => {
             // 完了時の処理
             if (player.isValid()) {
-                player.setDynamicProperty(ROULETTE_PLAYING_PROP, undefined);
+                player.removeTag("nacoroulettePlaying");
             }
         });
     }
@@ -255,6 +254,6 @@ export class NacoRoulette {
             // 終了コールバック
             if (onComplete) system.runTimeout(onComplete, 60);
 
-        }, 10); // 回転停止から一呼吸おいて結果表示
+        }, 15); // 回転停止から一呼吸おいて結果表示
     }
 }

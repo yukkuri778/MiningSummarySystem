@@ -1,5 +1,6 @@
 import { world, system } from "@minecraft/server";
 import { RouletteSystem } from "./roulette.js";
+import { NacoRoulette } from "./nacoroulette.js";
 
 // --- 定数定義 ---
 
@@ -26,6 +27,7 @@ const SUMMARY_EVENT_ID = "mss:summary";
 const RESET_EVENT_ID = "mss:reset";
 const CHECKV_EVENT_ID = "mss:checkV";
 const ROULETTE_EVENT_ID = "mss:roulette";
+const NACO_ROULETTE_EVENT_ID = "mss:naco";
 
 const BEHAVIOR_PACK_VERSION = "1.3.0"; // パックのバージョン
 
@@ -248,6 +250,8 @@ system.afterEvents.scriptEventReceive.subscribe(event => {
         // メッセージをIDとして扱う。空なら "default"
         const rouletteId = event.message && event.message.trim().length > 0 ? event.message.trim() : "default";
         RouletteSystem.start(sourceEntity, rouletteId);
+    } else if (id === NACO_ROULETTE_EVENT_ID) {
+        NacoRoulette.start(sourceEntity);
     }
     for(const p of world.getAllPlayers()){
         if(p.hasTag(TAG_LOG)){

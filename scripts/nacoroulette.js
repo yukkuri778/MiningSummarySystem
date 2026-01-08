@@ -59,7 +59,7 @@ const SYMBOL_TABLE = [
         ],
         sound: "random.orb",
         title: "§cR",
-        subtitle: "Rが当たった！"
+        subtitle: "レアが当たった！"
     },
     {
         id: "Normal",
@@ -73,7 +73,7 @@ const SYMBOL_TABLE = [
         ],
         sound: "random.break",
         title: "§8N",
-        subtitle: "Nが当たった！"
+        subtitle: "ノーマルが当たった！"
     }
 ];
 

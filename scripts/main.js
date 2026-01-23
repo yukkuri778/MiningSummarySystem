@@ -23,6 +23,7 @@ const DISPLAY_MODE_NONE = 2;
 
 // コマンド用イベントID
 const RANK_EVENT_ID = "mss:rank";
+const RANK_ALL_EVENT_ID = "mss:rank_all";
 const SUMMARY_EVENT_ID = "mss:summary";
 const RESET_EVENT_ID = "mss:reset";
 const CHECKV_EVENT_ID = "mss:checkV";
@@ -240,6 +241,8 @@ system.afterEvents.scriptEventReceive.subscribe(event => {
 
     if (id === RANK_EVENT_ID) {
         showRank(sourceEntity);
+    } else if (id === RANK_ALL_EVENT_ID) {
+        showRankAll(sourceEntity);
     } else if (id === SUMMARY_EVENT_ID) {
         showSummary(sourceEntity);
     } else if (id === RESET_EVENT_ID) {
@@ -515,6 +518,78 @@ function showRank(player) {
         }
     }
 }
+
+/**
+ * すべての採掘数ランキングをプレイヤーに表示します。
+ * @param {import("@minecraft/server").Player} player
+ */
+function showRankAll(player) {
+    try {
+        const objective = world.scoreboard.getObjective(MINING_COUNT_OBJECTIVE);
+        if (!objective) {
+            player.sendMessage("§a[MSS]§cランキングデータを取得できませんでした。");
+            return;
+        }
+
+        const scores = objective.getScores();
+        scores.sort((a, b) => b.score - a.score);
+
+        // プレイヤー名を取得するためのヘルパーマップ
+        const nameMapStr = world.getDynamicProperty(PLAYER_NAME_MAP_PROP);
+        const nameMap = nameMapStr ? JSON.parse(nameMapStr) : {};
+        const onlinePlayers = world.getAllPlayers();
+
+        /**
+         * スコアボードの参加者情報からプレイヤー名を取得します。
+         * オンラインプレイヤーは現在の名前を、オフラインプレイヤーは保存された名前を返します。
+         * @param {import("@minecraft/server").ScoreboardIdentity} participant
+         * @returns {string}
+         */
+        const getPlayerNameFromParticipant = (participant) => {
+            // まずオンラインプレイヤーから探す
+            const onlinePlayer = onlinePlayers.find(p => p.scoreboardIdentity?.id === participant.id);
+            if (onlinePlayer) {
+                return onlinePlayer.name;
+            }
+            // オフラインなら保存されたマップから探す
+            if (nameMap[participant.id]) {
+                return nameMap[participant.id];
+            }
+            // それでも見つからなければ、元の表示名を返すか、固定の文字列を返す
+            return participant.displayName.startsWith("commands.") ? "(不明なオフラインプレイヤー)" : participant.displayName;
+        };
+        
+        player.sendMessage("§a[MSS]§l§b--- 採掘数ランキング ---");
+
+        if (scores.length === 0) {
+            player.sendMessage("§eランキングデータがありません。");
+        } else {
+            scores.forEach((entry, index) => {
+                const playerName = getPlayerNameFromParticipant(entry.participant);
+                player.sendMessage(`§e${index + 1}位: §f${playerName} §7- §r${entry.score}個`);
+            });
+        }
+
+        player.sendMessage("§b--------------------");
+
+        // 実行者の順位を表示（確認用）
+        const myScore = objective.getScore(player) ?? 0;
+        const myRank = scores.findIndex(s => s.participant.id === player.scoreboardIdentity.id) + 1;
+
+        if (myRank > 0) {
+            player.sendMessage(`§aあなたの順位: ${myRank}位 (${myScore}個)`);
+        }
+    } catch (e) {
+        player.sendMessage("§a[MSS]§cランキングの表示中にエラーが発生しました。");
+        console.error(`[MiningRanking] Error in showRankAll: ${e}`);
+        for(const p of world.getAllPlayers()){
+            if(p.hasTag(TAG_LOG)){
+                p.sendMessage(`§a[MSSlog]§cランキング表示エラー：${e}`);
+            }
+        }
+    }
+}
+
 
 /**
  * ワールド全体の採掘統計をプレイヤーに表示します。

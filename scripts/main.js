@@ -1,6 +1,7 @@
-import { world, system } from "@minecraft/server";
+import { world, system, ItemStack } from "@minecraft/server";
 import { RouletteSystem } from "./roulette.js";
 import { NacoRoulette } from "./nacoroulette.js";
+import { startChestRoulette } from "./chest_roulette.js";
 
 // --- 定数定義 ---
 
@@ -228,6 +229,21 @@ world.afterEvents.playerBreakBlock.subscribe(event => {
     } else {
         world.setDynamicProperty(propId, 1);
     }
+
+    // 4. 宝箱ドロップ判定 (1/10000の確率)
+    if (Math.random() < 0.0001) {
+        // アイテムをドロップさせる
+        try {
+            // プレイヤーの位置にドロップ
+            const itemStack = new ItemStack("mss:nakoiribukuro", 1);
+            player.dimension.spawnItem(itemStack, player.location);
+            
+            player.sendMessage("§a[MSS]§gラッキー！§fブロックの中から§dなこ入り袋§fを見つけた！");
+            player.playSound("random.pop", player.location);
+        } catch (e) {
+            console.error(`Failed to drop treasure chest: ${e}`);
+        }
+    }
 });
 
 /**
@@ -281,6 +297,10 @@ world.afterEvents.itemUse.subscribe(event => {
         }
     }
     } 
+    // 宝箱を使用
+    else if (itemStack.typeId === 'mss:nakoiribukuro') {
+        startChestRoulette(source);
+    }
     // 時計使用でアクションバー表示を切り替え
     else if (itemStack.typeId === 'minecraft:clock') {
         let currentStatus = source.getDynamicProperty(ACTION_BAR_ENABLED_PROP);

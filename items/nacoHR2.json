@@ -1,0 +1,14 @@
+{
+  "format_version": "1.21.10",
+  "minecraft:item": {
+    "description": {
+      "identifier": "naco:naco_HR2"
+    },
+    "components": {
+      "minecraft:icon": "nacoHR2",
+      "minecraft:display_name": {
+        "value": "§gHR§f「ぜにち」"
+      }
+    }
+  }
+}

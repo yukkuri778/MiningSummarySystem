@@ -23,16 +23,27 @@ const CONFIG = {
 const SYMBOL_TABLE = [
     {
         id: "secret",
-        weight: 0, 
-        display: "§6§l777§r",
+        weight: 0.5, 
+        display: "§tS§r",
         commands: [
-            "give @s diamond 10",
-            "give @s netherite_ingot 3",
-            "give @s beacon 1"
+            "give @s naco:naco_S1 1",
+            "give @s naco:naco_S2 1"
         ],
         sound: "random.totem",
-        title: "§6§lJACKPOT!!",
+        title: "§6§l!!SECRET!!",
         subtitle: "§eシークレット大当たり！"
+    },
+    {
+        id: "HR",
+        weight: 3,
+        display: "§gHR§r",
+        commands: [
+            "give @s naco:naco_HR1 1",
+            "give @s naco:naco_HR2 1"
+        ],
+        sound: "random.levelup",
+        title: "§gHR",
+        subtitle: "§gハイパーレアが当たった！"
     },
     {
         id: "SSR",
@@ -49,7 +60,7 @@ const SYMBOL_TABLE = [
     },
     {
         id: "Rare",
-        weight: 30,
+        weight: 26.5,
         display: "§cR§r",
         commands: [
             "give @s naco:naco_R1 1",
@@ -230,9 +241,21 @@ export class NacoRoulette {
             });
             player.onScreenDisplay.updateSubtitle(symbol.subtitle);
 
-            // 音再生
-            if (symbol.sound) {
-                player.playSound(symbol.sound);
+            // HR (ハイパーレア) または secret (シークレット) が当選した場合のみ、ワールド内の全プレイヤーにチャットで告知とサウンド再生を行う
+            if (symbol.id === "HR" || symbol.id === "secret") {
+                world.sendMessage(`§a[MSS] §r§f${player.name}さんがイラストガチャで §l${symbol.title}§r§f を当てました！おめでとうございます！`);
+                
+                // 全プレイヤーに対して当選時の効果音を再生する（どこにいても聞こえるように個別再生）
+                if (symbol.sound) {
+                    for (const p of world.getAllPlayers()) {
+                        p.playSound(symbol.sound);
+                    }
+                }
+            } else {
+                // 通常のレアリティの場合は、当選した本人にのみサウンドを再生する
+                if (symbol.sound) {
+                    player.playSound(symbol.sound);
+                }
             }
 
             // 花火演出（コマンドがある場合のみ）

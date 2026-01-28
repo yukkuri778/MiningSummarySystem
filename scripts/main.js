@@ -169,11 +169,6 @@ world.afterEvents.playerBreakBlock.subscribe(event => {
             }
         }
 
-        for(const p of world.getAllPlayers()){
-        if(p.hasTag(TAG_LOG)){
-            p.sendMessage(`§a[MSSlog]§7ブロック破壊：${player.name}, ${blockId}`);
-        }
-    }
 
     } catch (e) {
         console.error(`[MiningRanking] Failed to add score to player ${player.name}: ${e}`);
@@ -292,14 +287,19 @@ world.afterEvents.itemUse.subscribe(event => {
             showRank(source);
         });
         for(const p of world.getAllPlayers()){
-        if(p.hasTag(TAG_LOG)){
-            p.sendMessage(`§a[MSSlog]§7アイテム使用：${source.name}, ${itemStack.typeId}`);
+            if(p.hasTag(TAG_LOG)){
+                p.sendMessage(`§a[MSSlog]§7アイテム使用：${source.name}, ${itemStack.typeId}`);
+            }
         }
-    }
     } 
     // 宝箱を使用
     else if (itemStack.typeId === 'mss:nakoiribukuro') {
         startChestRoulette(source);
+        for(const p of world.getAllPlayers()){
+            if(p.hasTag(TAG_LOG)){
+                p.sendMessage(`§a[MSSlog]§7アイテム使用：${source.name}, ${itemStack.typeId}`);
+            }
+        }
     }
     // 時計使用でアクションバー表示を切り替え
     else if (itemStack.typeId === 'minecraft:clock') {

@@ -265,6 +265,13 @@ export class NacoRoulette {
                 } catch(e) {}
             }
 
+            //ログ出力
+            for(const p of world.getAllPlayers()){
+                if(p.hasTag("logListener")){
+                    p.sendMessage(`§a[MSSlog]§7イラスト結果：${player.name}, ${symbol.title}`);
+                }
+            }
+
             // コマンド実行（ランダムに1つ選択）
             if (symbol.commands && symbol.commands.length > 0) {
                 const randomCommand = symbol.commands[Math.floor(Math.random() * symbol.commands.length)];

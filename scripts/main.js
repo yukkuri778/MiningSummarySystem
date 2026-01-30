@@ -225,8 +225,8 @@ world.afterEvents.playerBreakBlock.subscribe(event => {
         world.setDynamicProperty(propId, 1);
     }
 
-    // 4. 宝箱ドロップ判定 (1/10000の確率)
-    if (Math.random() < 0.0001) {
+    // 4. 宝箱ドロップ判定(0.0001で1/10000)
+    if (Math.random() < 0.00013) {
         // アイテムをドロップさせる
         try {
             // プレイヤーの位置にドロップ

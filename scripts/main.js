@@ -63,13 +63,32 @@ const EXCLUDED_BLOCKS = new Set([
     "minecraft:leaf_litter",
     "minecraft:tripwire_hook",
     "minecraft:tripwire",
-    "minecraft:netherrack"
+    "minecraft:netherrack",
+    "minecraft:undyed_shulker_box",
+    "minecraft:white_shulker_box",
+    "minecraft:orange_shulker_box",
+    "minecraft:magenta_shulker_box",
+    "minecraft:light_blue_shulker_box",
+    "minecraft:yellow_shulker_box",
+    "minecraft:lime_shulker_box",
+    "minecraft:pink_shulker_box",
+    "minecraft:gray_shulker_box",
+    "minecraft:light_gray_shulker_box",
+    "minecraft:cyan_shulker_box",
+    "minecraft:purple_shulker_box",
+    "minecraft:blue_shulker_box",
+    "minecraft:brown_shulker_box",
+    "minecraft:green_shulker_box",
+    "minecraft:red_shulker_box",
+    "minecraft:black_shulker_box",
 ]);
 
 // --- グローバル変数 ---
 
 // リセット要求を管理するオブジェクト { playerId: timestamp }
 let resetRequests = {};
+// 露天掘り警告の最終時刻を管理するオブジェクト { playerId: timestamp }
+let lastWarningTime = {};
 
 // --- 初期化処理 ---
 
@@ -137,6 +156,39 @@ world.afterEvents.playerBreakBlock.subscribe(event => {
             }
         }
         return; // 安全のため、エラー時もカウントしない
+    }
+
+    // 採掘場所周辺のチェック（露天掘り判定）
+    // 掘ったブロックの上5マス目を確認し、空気ブロック以外があれば警告を出力する
+    try {
+        const { x, y, z } = event.block.location;
+        const dimension = event.block.dimension;
+        let hasNonAirAbove = false;
+
+        // 上5ブロック目のみチェック
+        const blockAbove = dimension.getBlock({ x: x, y: y + 5, z: z });
+        if (blockAbove && blockAbove.typeId !== "minecraft:air") {
+            hasNonAirAbove = true;
+        }
+
+        if (hasNonAirAbove) {
+            const now = Date.now();
+            const lastTime = lastWarningTime[player.id] || 0;
+
+            // 5秒経過している場合のみ警告を表示
+            if (now - lastTime >= 5000) {
+                for (const p of world.getAllPlayers()) {
+                    if (p.hasTag(TAG_LOG)) {
+                        // 警告メッセージ: 上5ブロック目に障害物があることを通知
+                        p.sendMessage(`§a[MSSlog]§e下掘り検知：§e${player.name} §7(${x}, ${y}, ${z})`);
+                    }
+                }
+                // 時刻を更新
+                lastWarningTime[player.id] = now;
+            }
+        }
+    } catch(e) {
+        console.warn(`[MiningRanking] Failed to check blocks above: ${e}`);
     }
 
     // 1. プレイヤーの採掘数を1増やす

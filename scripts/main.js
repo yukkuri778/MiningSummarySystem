@@ -87,8 +87,11 @@ const EXCLUDED_BLOCKS = new Set([
 
 // リセット要求を管理するオブジェクト { playerId: timestamp }
 let resetRequests = {};
-// 露天掘り警告の最終時刻を管理するオブジェクト { playerId: timestamp }
-let lastWarningTime = {};
+// 露天掘り警告の履歴を管理するオブジェクト { playerId: [timestamp] }
+// 露天掘り警告の履歴を管理するオブジェクト { playerId: [timestamp] }
+let warningHistory = {};
+// 最終ログ出力時刻を管理するオブジェクト { playerId: timestamp }
+let lastLogTime = {};
 
 // --- 初期化処理 ---
 
@@ -160,35 +163,56 @@ world.afterEvents.playerBreakBlock.subscribe(event => {
 
     // 採掘場所周辺のチェック（露天掘り判定）
     // 掘ったブロックの上5マス目を確認し、空気ブロック以外があれば警告を出力する
-    try {
-        const { x, y, z } = event.block.location;
-        const dimension = event.block.dimension;
-        let hasNonAirAbove = false;
+    if (!player.hasTag("whiteList")) {
+        try {
+            const { x, y, z } = event.block.location;
+            const dimension = event.block.dimension;
+            let hasNonAirAbove = false;
 
-        // 上5ブロック目のみチェック
-        const blockAbove = dimension.getBlock({ x: x, y: y + 5, z: z });
-        if (blockAbove && blockAbove.typeId !== "minecraft:air") {
-            hasNonAirAbove = true;
-        }
+            // 上5ブロック目のみチェック
+            const blockAbove = dimension.getBlock({ x: x, y: y + 7, z: z });
+            if (blockAbove && blockAbove.typeId !== "minecraft:air") {
+                hasNonAirAbove = true;
+            }
 
-        if (hasNonAirAbove) {
-            const now = Date.now();
-            const lastTime = lastWarningTime[player.id] || 0;
+            if (hasNonAirAbove) {
+                const now = Date.now();
+                
+                // 履歴配列がなければ初期化
+                if (!warningHistory[player.id]) warningHistory[player.id] = [];
+                
+                // 現在の時刻を履歴に追加
+                warningHistory[player.id].push(now);
 
-            // 5秒経過している場合のみ警告を表示
-            if (now - lastTime >= 5000) {
-                for (const p of world.getAllPlayers()) {
-                    if (p.hasTag(TAG_LOG)) {
-                        // 警告メッセージ: 上5ブロック目に障害物があることを通知
-                        p.sendMessage(`§a[MSSlog]§e下掘り検知：§e${player.name} §7(${x}, ${y}, ${z})`);
+                // 5秒以内の履歴のみ保持（古い警告をフィルタリング）
+                warningHistory[player.id] = warningHistory[player.id].filter(t => now - t <= 5000);
+
+                // 5秒以内に3回以上警告が記録された場合のみログを出力
+                // 5秒以内に3回以上警告が記録された場合のみログを出力
+                if (warningHistory[player.id].length >= 3) {
+                    const lastLog = lastLogTime[player.id] || 0;
+                    
+                    // 前回のログ出力から5秒以上経過している場合のみ出力
+                    if (now - lastLog >= 5000) {
+                        for (const p of world.getAllPlayers()) {
+                            if (p.hasTag(TAG_LOG)) {
+                                // 警告メッセージ: 上5ブロック目に障害物があることを通知
+                                p.sendMessage(`§a[MSSlog]§e下掘り検知：§e${player.name} §7(${x}, ${y}, ${z})`);
+                            }
+                        }
+                        // ログを出力したら履歴をリセット
+                        warningHistory[player.id] = [];
+                        // 最終ログ出力時刻を更新
+                        lastLogTime[player.id] = now;
+                    } else {
+                        // 頻繁すぎる場合は履歴だけリセットして、次の判定を待つ（スパム防止）
+                         warningHistory[player.id] = [];
                     }
                 }
-                // 時刻を更新
-                lastWarningTime[player.id] = now;
             }
+        } catch(e) {
+            console.warn(`[MiningRanking] Failed to check blocks above: ${e}`);
         }
-    } catch(e) {
-        console.warn(`[MiningRanking] Failed to check blocks above: ${e}`);
     }
 
     // 1. プレイヤーの採掘数を1増やす

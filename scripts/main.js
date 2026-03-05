@@ -69,6 +69,9 @@ const EXCLUDED_BLOCKS = new Set([
 // リセット要求を管理するオブジェクト { playerId: timestamp }
 let resetRequests = {};
 
+// プレイヤーの参加時刻を管理するオブジェクト { playerId: timestamp }
+let playerJoinTimes = {};
+
 // --- 初期化処理 ---
 
 /**
@@ -96,6 +99,10 @@ world.afterEvents.worldInitialize.subscribe(() => {
  */
 world.afterEvents.playerJoin.subscribe(event => {
     const { player } = event;
+    
+    // 参加時刻を記録 (5秒間の初期化猶予のため)
+    playerJoinTimes[player.id] = Date.now();
+
     // アクションバー表示設定がまだない場合、デフォルトでONにする
     if (player.getDynamicProperty(ACTION_BAR_ENABLED_PROP) === undefined) {
         player.setDynamicProperty(ACTION_BAR_ENABLED_PROP, DISPLAY_MODE_ALL);
@@ -106,6 +113,16 @@ world.afterEvents.playerJoin.subscribe(event => {
             p.sendMessage(`§a[MSSlog]§7初参加：${player.name}`);
         }
     }
+});
+
+/**
+ * プレイヤーが退出したときのイベントを処理します。
+ */
+world.afterEvents.playerLeave.subscribe(event => {
+    const { playerId } = event;
+    
+    // メモリリークを防ぐため参加時刻データを削除
+    delete playerJoinTimes[playerId];
 });
 
 /**
@@ -364,11 +381,19 @@ system.runInterval(() => {
 
             if (player.scoreboardIdentity === undefined) {
                 // IDがない = 初回またはデータロスト なので初期化
-                objective.setScore(player, 0);
-                for(const p of world.getAllPlayers()){
-                    if(p.hasTag(TAG_LOG)){
-                        p.sendMessage(`§a[MSSlog]§7リロード初期化（ID生成）：${player.name}`);
+                const joinTime = playerJoinTimes[player.id] || Date.now();
+                
+                // 参加から5秒（5000ミリ秒）経過している場合のみ初期化
+                if (Date.now() - joinTime > 5000) {
+                    objective.setScore(player, 0);
+                    for(const p of world.getAllPlayers()){
+                        if(p.hasTag(TAG_LOG)){
+                            p.sendMessage(`§a[MSSlog]§7リロード初期化（ID生成）：${player.name}`);
+                        }
                     }
+                } else {
+                    // まだ読み込み中の可能性があるため、今回はスキップして再チェックを待つ
+                    continue;
                 }
             }
 

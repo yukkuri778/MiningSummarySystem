@@ -1,0 +1,14 @@
+{
+  "format_version": "1.21.10",
+  "minecraft:item": {
+    "description": {
+      "identifier": "naco:naco_S2"
+    },
+    "components": {
+      "minecraft:icon": "nacoS2",
+      "minecraft:display_name": {
+        "value": "§tSecret§f「みんなでほわほわ」"
+      }
+    }
+  }
+}

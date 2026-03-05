@@ -1,6 +1,7 @@
-import { world, system } from "@minecraft/server";
+import { world, system, ItemStack } from "@minecraft/server";
 import { RouletteSystem } from "./roulette.js";
 import { NacoRoulette } from "./nacoroulette.js";
+import { startChestRoulette } from "./chest_roulette.js";
 
 // --- 定数定義 ---
 
@@ -23,13 +24,14 @@ const DISPLAY_MODE_NONE = 2;
 
 // コマンド用イベントID
 const RANK_EVENT_ID = "mss:rank";
+const RANK_ALL_EVENT_ID = "mss:rank_all";
 const SUMMARY_EVENT_ID = "mss:summary";
 const RESET_EVENT_ID = "mss:reset";
 const CHECKV_EVENT_ID = "mss:checkV";
 const ROULETTE_EVENT_ID = "mss:roulette";
 const NACO_ROULETTE_EVENT_ID = "mss:naco";
 
-const BEHAVIOR_PACK_VERSION = "1.4.1"; // パックのバージョン
+const BEHAVIOR_PACK_VERSION = "1.5.4"; // パックのバージョン
 
 // リセット確認用の待機時間（ミリ秒）
 const RESET_CONFIRMATION_TIMEOUT = 10000; // 10秒
@@ -61,13 +63,35 @@ const EXCLUDED_BLOCKS = new Set([
     "minecraft:leaf_litter",
     "minecraft:tripwire_hook",
     "minecraft:tripwire",
-    "minecraft:netherrack"
+    "minecraft:netherrack",
+    "minecraft:undyed_shulker_box",
+    "minecraft:white_shulker_box",
+    "minecraft:orange_shulker_box",
+    "minecraft:magenta_shulker_box",
+    "minecraft:light_blue_shulker_box",
+    "minecraft:yellow_shulker_box",
+    "minecraft:lime_shulker_box",
+    "minecraft:pink_shulker_box",
+    "minecraft:gray_shulker_box",
+    "minecraft:light_gray_shulker_box",
+    "minecraft:cyan_shulker_box",
+    "minecraft:purple_shulker_box",
+    "minecraft:blue_shulker_box",
+    "minecraft:brown_shulker_box",
+    "minecraft:green_shulker_box",
+    "minecraft:red_shulker_box",
+    "minecraft:black_shulker_box",
 ]);
 
 // --- グローバル変数 ---
 
 // リセット要求を管理するオブジェクト { playerId: timestamp }
 let resetRequests = {};
+// 露天掘り警告の履歴を管理するオブジェクト { playerId: [timestamp] }
+// 露天掘り警告の履歴を管理するオブジェクト { playerId: [timestamp] }
+let warningHistory = {};
+// 最終ログ出力時刻を管理するオブジェクト { playerId: timestamp }
+let lastLogTime = {};
 
 // プレイヤーの参加時刻を管理するオブジェクト { playerId: timestamp }
 let playerJoinTimes = {};
@@ -154,6 +178,60 @@ world.afterEvents.playerBreakBlock.subscribe(event => {
         return; // 安全のため、エラー時もカウントしない
     }
 
+    // 採掘場所周辺のチェック（露天掘り判定）
+    // 掘ったブロックの上5マス目を確認し、空気ブロック以外があれば警告を出力する
+    if (!player.hasTag("whiteList")) {
+        try {
+            const { x, y, z } = event.block.location;
+            const dimension = event.block.dimension;
+            let hasNonAirAbove = false;
+
+            // 上5ブロック目のみチェック
+            const blockAbove = dimension.getBlock({ x: x, y: y + 7, z: z });
+            if (blockAbove && blockAbove.typeId !== "minecraft:air") {
+                hasNonAirAbove = true;
+            }
+
+            if (hasNonAirAbove) {
+                const now = Date.now();
+                
+                // 履歴配列がなければ初期化
+                if (!warningHistory[player.id]) warningHistory[player.id] = [];
+                
+                // 現在の時刻を履歴に追加
+                warningHistory[player.id].push(now);
+
+                // 5秒以内の履歴のみ保持（古い警告をフィルタリング）
+                warningHistory[player.id] = warningHistory[player.id].filter(t => now - t <= 5000);
+
+                // 5秒以内に3回以上警告が記録された場合のみログを出力
+                // 5秒以内に3回以上警告が記録された場合のみログを出力
+                if (warningHistory[player.id].length >= 3) {
+                    const lastLog = lastLogTime[player.id] || 0;
+                    
+                    // 前回のログ出力から5秒以上経過している場合のみ出力
+                    if (now - lastLog >= 5000) {
+                        for (const p of world.getAllPlayers()) {
+                            if (p.hasTag(TAG_LOG)) {
+                                // 警告メッセージ: 上5ブロック目に障害物があることを通知
+                                p.sendMessage(`§a[MSSlog]§e下掘り検知：§e${player.name} §7(${x}, ${y}, ${z})`);
+                            }
+                        }
+                        // ログを出力したら履歴をリセット
+                        warningHistory[player.id] = [];
+                        // 最終ログ出力時刻を更新
+                        lastLogTime[player.id] = now;
+                    } else {
+                        // 頻繁すぎる場合は履歴だけリセットして、次の判定を待つ（スパム防止）
+                         warningHistory[player.id] = [];
+                    }
+                }
+            }
+        } catch(e) {
+            console.warn(`[MiningRanking] Failed to check blocks above: ${e}`);
+        }
+    }
+
     // 1. プレイヤーの採掘数を1増やす
     try {
         const objective = world.scoreboard.getObjective(MINING_COUNT_OBJECTIVE);
@@ -184,11 +262,6 @@ world.afterEvents.playerBreakBlock.subscribe(event => {
             }
         }
 
-        for(const p of world.getAllPlayers()){
-        if(p.hasTag(TAG_LOG)){
-            p.sendMessage(`§a[MSSlog]§7ブロック破壊：${player.name}, ${blockId}`);
-        }
-    }
 
     } catch (e) {
         console.error(`[MiningRanking] Failed to add score to player ${player.name}: ${e}`);
@@ -244,6 +317,21 @@ world.afterEvents.playerBreakBlock.subscribe(event => {
     } else {
         world.setDynamicProperty(propId, 1);
     }
+
+    // 4. 宝箱ドロップ判定(0.0001で1/10000)
+    if (Math.random() < 0.00013) {
+        // アイテムをドロップさせる
+        try {
+            // プレイヤーの位置にドロップ
+            const itemStack = new ItemStack("mss:nakoiribukuro", 1);
+            player.dimension.spawnItem(itemStack, player.location);
+            
+            player.sendMessage("§a[MSS]§gラッキー！§fブロックの中から§dなこ入り袋§fを見つけた！");
+            player.playSound("random.pop", player.location);
+        } catch (e) {
+            console.error(`Failed to drop treasure chest: ${e}`);
+        }
+    }
 });
 
 /**
@@ -257,6 +345,8 @@ system.afterEvents.scriptEventReceive.subscribe(event => {
 
     if (id === RANK_EVENT_ID) {
         showRank(sourceEntity);
+    } else if (id === RANK_ALL_EVENT_ID) {
+        showRankAll(sourceEntity);
     } else if (id === SUMMARY_EVENT_ID) {
         showSummary(sourceEntity);
     } else if (id === RESET_EVENT_ID) {
@@ -290,11 +380,20 @@ world.afterEvents.itemUse.subscribe(event => {
             showRank(source);
         });
         for(const p of world.getAllPlayers()){
-        if(p.hasTag(TAG_LOG)){
-            p.sendMessage(`§a[MSSlog]§7アイテム使用：${source.name}, ${itemStack.typeId}`);
+            if(p.hasTag(TAG_LOG)){
+                p.sendMessage(`§a[MSSlog]§7アイテム使用：${source.name}, ${itemStack.typeId}`);
+            }
+        }
+    } 
+    // 宝箱を使用
+    else if (itemStack.typeId === 'mss:nakoiribukuro') {
+        startChestRoulette(source);
+        for(const p of world.getAllPlayers()){
+            if(p.hasTag(TAG_LOG)){
+                p.sendMessage(`§a[MSSlog]§7アイテム使用：${source.name}, ${itemStack.typeId}`);
+            }
         }
     }
-    } 
     // 時計使用でアクションバー表示を切り替え
     else if (itemStack.typeId === 'minecraft:clock') {
         let currentStatus = source.getDynamicProperty(ACTION_BAR_ENABLED_PROP);
@@ -540,6 +639,78 @@ function showRank(player) {
         }
     }
 }
+
+/**
+ * すべての採掘数ランキングをプレイヤーに表示します。
+ * @param {import("@minecraft/server").Player} player
+ */
+function showRankAll(player) {
+    try {
+        const objective = world.scoreboard.getObjective(MINING_COUNT_OBJECTIVE);
+        if (!objective) {
+            player.sendMessage("§a[MSS]§cランキングデータを取得できませんでした。");
+            return;
+        }
+
+        const scores = objective.getScores();
+        scores.sort((a, b) => b.score - a.score);
+
+        // プレイヤー名を取得するためのヘルパーマップ
+        const nameMapStr = world.getDynamicProperty(PLAYER_NAME_MAP_PROP);
+        const nameMap = nameMapStr ? JSON.parse(nameMapStr) : {};
+        const onlinePlayers = world.getAllPlayers();
+
+        /**
+         * スコアボードの参加者情報からプレイヤー名を取得します。
+         * オンラインプレイヤーは現在の名前を、オフラインプレイヤーは保存された名前を返します。
+         * @param {import("@minecraft/server").ScoreboardIdentity} participant
+         * @returns {string}
+         */
+        const getPlayerNameFromParticipant = (participant) => {
+            // まずオンラインプレイヤーから探す
+            const onlinePlayer = onlinePlayers.find(p => p.scoreboardIdentity?.id === participant.id);
+            if (onlinePlayer) {
+                return onlinePlayer.name;
+            }
+            // オフラインなら保存されたマップから探す
+            if (nameMap[participant.id]) {
+                return nameMap[participant.id];
+            }
+            // それでも見つからなければ、元の表示名を返すか、固定の文字列を返す
+            return participant.displayName.startsWith("commands.") ? "(不明なオフラインプレイヤー)" : participant.displayName;
+        };
+        
+        player.sendMessage("§a[MSS]§l§b--- 採掘数ランキング ---");
+
+        if (scores.length === 0) {
+            player.sendMessage("§eランキングデータがありません。");
+        } else {
+            scores.forEach((entry, index) => {
+                const playerName = getPlayerNameFromParticipant(entry.participant);
+                player.sendMessage(`§e${index + 1}位: §f${playerName} §7- §r${entry.score}個`);
+            });
+        }
+
+        player.sendMessage("§b--------------------");
+
+        // 実行者の順位を表示（確認用）
+        const myScore = objective.getScore(player) ?? 0;
+        const myRank = scores.findIndex(s => s.participant.id === player.scoreboardIdentity.id) + 1;
+
+        if (myRank > 0) {
+            player.sendMessage(`§aあなたの順位: ${myRank}位 (${myScore}個)`);
+        }
+    } catch (e) {
+        player.sendMessage("§a[MSS]§cランキングの表示中にエラーが発生しました。");
+        console.error(`[MiningRanking] Error in showRankAll: ${e}`);
+        for(const p of world.getAllPlayers()){
+            if(p.hasTag(TAG_LOG)){
+                p.sendMessage(`§a[MSSlog]§cランキング表示エラー：${e}`);
+            }
+        }
+    }
+}
+
 
 /**
  * ワールド全体の採掘統計をプレイヤーに表示します。

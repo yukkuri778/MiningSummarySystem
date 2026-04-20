@@ -505,7 +505,7 @@ system.runInterval(() => {
                 const diff = nextRankScore - myScore + 1;
                 nextRankInfo = `次の順位まで：§f${diff}個`;
             } else if (allScores.length > 1) {
-                nextRankInfo = "次の順位まで：§f現在1位！";
+                nextRankInfo = "";
             } else {
                 nextRankInfo = "独走中！";
             }

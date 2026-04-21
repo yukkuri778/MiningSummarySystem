@@ -33,7 +33,7 @@ const CHECKV_EVENT_ID = "mss:checkV";
 const ROULETTE_EVENT_ID = "mss:roulette";
 const NACO_ROULETTE_EVENT_ID = "mss:naco";
 
-const BEHAVIOR_PACK_VERSION = "1.5.5"; // パックのバージョン
+const BEHAVIOR_PACK_VERSION = "1.6.0"; // パックのバージョン
 
 // リセット確認用の待機時間（ミリ秒）
 const RESET_CONFIRMATION_TIMEOUT = 10000; // 10秒

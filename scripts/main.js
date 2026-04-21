@@ -14,6 +14,8 @@ const WORLD_TOTAL_HOLDER = "world_total"; // ワールド全体の総採掘数
 
 // Dynamic Property のプレフィックス
 const BLOCK_COUNT_PREFIX = "block_count:"; // ブロックごとの採掘数
+const DAILY_MINING_OBJECTIVE = "daily_mining"; // デイリー採掘数のスコアボード名
+const DAILY_MINING_DATE_PROP = "mss:daily_mining_date"; // デイリー採掘日の記録(Dynamic Property)
 const ACTION_BAR_ENABLED_PROP = "actionBar:enabled"; // アクションバー表示設定
 const PLAYER_NAME_MAP_PROP = "mss:player_name_map"; // プレイヤーIDと名前の対応表
 
@@ -96,6 +98,16 @@ let lastLogTime = {};
 // プレイヤーの参加時刻を管理するオブジェクト { playerId: timestamp }
 let playerJoinTimes = {};
 
+/**
+ * 現在の時刻から、デイリーリセット（朝4時）を考慮した「日付文字列」を取得します。
+ * 朝4時までは前日として扱われます。
+ */
+function getDailyDateString() {
+    // JSTなどのタイムゾーンに依存せず、単純に現在時刻から4時間引くことで朝4時を日界とする
+    const adjustedTime = new Date(Date.now() - 4 * 60 * 60 * 1000);
+    return `${adjustedTime.getFullYear()}-${adjustedTime.getMonth() + 1}-${adjustedTime.getDate()}`;
+}
+
 // --- 初期化処理 ---
 
 /**
@@ -105,6 +117,10 @@ world.afterEvents.worldInitialize.subscribe(() => {
     // プレイヤーごとの採掘数スコアボード
     if (!world.scoreboard.getObjective(MINING_COUNT_OBJECTIVE)) {
         world.scoreboard.addObjective(MINING_COUNT_OBJECTIVE, "採掘数");
+    }
+
+    if (!world.scoreboard.getObjective(DAILY_MINING_OBJECTIVE)) {
+        world.scoreboard.addObjective(DAILY_MINING_OBJECTIVE, "デイリー採掘数");
     }
 
     // ワールド統計用スコアボード
@@ -137,6 +153,38 @@ world.afterEvents.playerJoin.subscribe(event => {
             p.sendMessage(`§a[MSSlog]§7初参加：${player.name}`);
         }
     }
+
+    // ログイン5秒後（100 ticks）に日付変更確認＆個別リセット処理を実行
+    system.runTimeout(() => {
+        try {
+            // プレイヤーが現在もワールドにいるか確認
+            if (!player.isValid()) return;
+
+            const currentDateStr = getDailyDateString();
+            const lastDateStr = player.getDynamicProperty(DAILY_MINING_DATE_PROP);
+            
+            // 日付をまたいでいる場合のみリセット
+            if (lastDateStr !== currentDateStr) {
+                let dailyObjective = world.scoreboard.getObjective(DAILY_MINING_OBJECTIVE);
+                if (!dailyObjective) {
+                    dailyObjective = world.scoreboard.addObjective(DAILY_MINING_OBJECTIVE, "デイリー採掘数");
+                }
+                
+                // 次に掘るまで待たずにこの時点でスコアボードを0にリセット
+                dailyObjective.setScore(player, 0);
+                player.setDynamicProperty(DAILY_MINING_DATE_PROP, currentDateStr);
+
+                // ログ通知（必要時）
+                for (const p of world.getAllPlayers()) {
+                    if (p.hasTag(TAG_LOG)) {
+                        p.sendMessage(`§a[MSSlog]§7デイリーリセット実行(参加時)：${player.name}`);
+                    }
+                }
+            }
+        } catch (e) {
+            console.warn(`[MiningRanking] Failed daily reset check on join: ${e}`);
+            }
+    }, 100);
 });
 
 /**
@@ -234,6 +282,24 @@ world.afterEvents.playerBreakBlock.subscribe(event => {
 
     // 1. プレイヤーの採掘数を1増やす
     try {
+        // デイリー採掘数の更新処理 (スコアボード反映)
+        const currentDateStr = getDailyDateString();
+        const lastDateStr = player.getDynamicProperty(DAILY_MINING_DATE_PROP);
+        
+        let dailyObjective = world.scoreboard.getObjective(DAILY_MINING_OBJECTIVE);
+        if (!dailyObjective) {
+            dailyObjective = world.scoreboard.addObjective(DAILY_MINING_OBJECTIVE, "デイリー採掘数");
+        }
+        
+        if (lastDateStr === currentDateStr) {
+            dailyObjective.addScore(player, 1);
+        } else {
+            // 日付が変わった場合は0始まりとして1をセット
+            dailyObjective.setScore(player, 1);
+        }
+        
+        player.setDynamicProperty(DAILY_MINING_DATE_PROP, currentDateStr);
+
         const objective = world.scoreboard.getObjective(MINING_COUNT_OBJECTIVE);
         // スコアをインクリメントし、新しいスコアを取得
         const newScore = objective.addScore(player, 1);
@@ -519,6 +585,15 @@ system.runInterval(() => {
                 myMoney = objectiveMoney.getScore(player) ?? 0;
             }
 
+            // デイリー採掘数の取得
+            const currentDateStr = getDailyDateString();
+            const lastDateStr = player.getDynamicProperty(DAILY_MINING_DATE_PROP);
+            let myDailyScore = 0;
+            if (lastDateStr === currentDateStr) {
+                const dailyObj = world.scoreboard.getObjective(DAILY_MINING_OBJECTIVE);
+                myDailyScore = dailyObj?.getScore(player) ?? 0;
+            }
+
             let message = "";
             if (mode === DISPLAY_MODE_SIMPLE) {
                  message = `§d採掘数: §f${myScore}個 §7| §g所持金: §f${myMoney}§7なこ`;
@@ -621,14 +696,24 @@ function showRank(player) {
 
         // 実行者の順位を表示
         const myScore = objective.getScore(player) ?? 0;
-        const myRank = scores.findIndex(s => s.participant.id === player.scoreboardIdentity.id) + 1;
+        const participantId = player.scoreboardIdentity?.id;
+        const myRank = participantId ? scores.findIndex(s => s.participant.id === participantId) + 1 : 0;
 
+        // デイリー採掘数の取得
+        const currentDateStr = getDailyDateString();
+        const lastDateStr = player.getDynamicProperty(DAILY_MINING_DATE_PROP);
+        let myDailyScore = 0;
+        if (lastDateStr === currentDateStr) {
+            const dailyObj = world.scoreboard.getObjective(DAILY_MINING_OBJECTIVE);
+            myDailyScore = dailyObj?.getScore(player) ?? 0;
+        }
 
         if (myRank > 0) {
             player.sendMessage(`§aあなたの順位: ${myRank}位 (${myScore}個)`);
         } else {
             player.sendMessage("§aあなたはまだランク外です。");
         }
+        player.sendMessage(`§a今日の採掘数: ${myDailyScore}個`);
     } catch (e) {
         player.sendMessage("§a[MSS]§cランキングの表示中にエラーが発生しました。");
         console.error(`[MiningRanking] Error in showRank: ${e}`);
@@ -813,6 +898,18 @@ function executeReset() {
             for (const participant of miningObjective.getParticipants()) {
                 miningObjective.removeParticipant(participant);
             }
+        }
+
+        const dailyObjective = world.scoreboard.getObjective(DAILY_MINING_OBJECTIVE);
+        if (dailyObjective) {
+            for (const participant of dailyObjective.getParticipants()) {
+                dailyObjective.removeParticipant(participant);
+            }
+        }
+
+        // デイリー最終更新日もリセット（オンラインプレイヤーのみ可能）
+        for (const p of world.getAllPlayers()) {
+            p.setDynamicProperty(DAILY_MINING_DATE_PROP, undefined);
         }
 
         // 2. ワールド全体の採掘数をリセット

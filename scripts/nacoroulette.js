@@ -248,7 +248,7 @@ export class NacoRoulette {
                 // 全プレイヤーに対して当選時の効果音を再生する（どこにいても聞こえるように個別再生）
                 if (symbol.sound) {
                     for (const p of world.getAllPlayers()) {
-                        p.playSound(symbol.sound);
+                        p.playSound(symbol.sound,{volume: 0.3});
                     }
                 }
             } else {

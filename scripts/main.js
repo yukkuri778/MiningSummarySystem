@@ -33,7 +33,7 @@ const CHECKV_EVENT_ID = "mss:checkV";
 const ROULETTE_EVENT_ID = "mss:roulette";
 const NACO_ROULETTE_EVENT_ID = "mss:naco";
 
-const BEHAVIOR_PACK_VERSION = "1.6.0"; // パックのバージョン
+const BEHAVIOR_PACK_VERSION = "1.6.1"; // パックのバージョン
 
 // リセット確認用の待機時間（ミリ秒）
 const RESET_CONFIRMATION_TIMEOUT = 10000; // 10秒
@@ -571,9 +571,9 @@ system.runInterval(() => {
                 const diff = nextRankScore - myScore + 1;
                 nextRankInfo = `次の順位まで：§f${diff}個`;
             } else if (allScores.length > 1) {
-                nextRankInfo = "";
+                nextRankInfo = "( •ө• )";
             } else {
-                nextRankInfo = "独走中！";
+                nextRankInfo = "独走中";
             }
 
             let myMoney = "§cエラー";

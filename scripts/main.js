@@ -5,6 +5,8 @@ import { startChestRoulette } from "./chest_roulette.js";
 
 // --- 定数定義 ---
 
+const BEHAVIOR_PACK_VERSION = "1.6.1"; // パックのバージョン
+
 // スコアボード名
 const MINING_COUNT_OBJECTIVE = "mining_count"; // プレイヤーごとの採掘数
 const WORLD_MINING_COUNT_OBJECTIVE = "world_mining"; // ワールド全体の統計
@@ -27,13 +29,14 @@ const DISPLAY_MODE_NONE = 2;
 // コマンド用イベントID
 const RANK_EVENT_ID = "mss:rank";
 const RANK_ALL_EVENT_ID = "mss:rank_all";
+const RANK_DAILY_EVENT_ID = "mss:rank_daily"; // デイリーランキングを表示するためのイベントID
 const SUMMARY_EVENT_ID = "mss:summary";
 const RESET_EVENT_ID = "mss:reset";
 const CHECKV_EVENT_ID = "mss:checkV";
 const ROULETTE_EVENT_ID = "mss:roulette";
 const NACO_ROULETTE_EVENT_ID = "mss:naco";
 
-const BEHAVIOR_PACK_VERSION = "1.6.1"; // パックのバージョン
+const WORLD_DAILY_RESET_DATE_PROP = "mss:world_daily_reset_date"; // ワールド全体で最後にデイリーリセットを行った日付を記録するDynamic Propertyのキー名
 
 // リセット確認用の待機時間（ミリ秒）
 const RESET_CONFIRMATION_TIMEOUT = 10000; // 10秒
@@ -108,6 +111,48 @@ function getDailyDateString() {
     return `${adjustedTime.getFullYear()}-${adjustedTime.getMonth() + 1}-${adjustedTime.getDate()}`;
 }
 
+/**
+ * ワールド全体のデイリーリセット処理を実行します。
+ * 前回のリセット日と現在の日付が異なる場合、デイリー採掘スコアボードを全員分クリアし、日付プロパティを更新します。
+ * これにより、オフラインプレイヤーの古いデイリーデータがランキングに残るのを防ぎます。
+ */
+function checkWorldDailyReset() {
+    try {
+        const currentDateStr = getDailyDateString();
+        const lastResetDate = world.getDynamicProperty(WORLD_DAILY_RESET_DATE_PROP);
+        
+        // 日付が変わっている場合のみリセット処理を実行
+        if (lastResetDate !== currentDateStr) {
+            const dailyObjective = world.scoreboard.getObjective(DAILY_MINING_OBJECTIVE);
+            if (dailyObjective) {
+                // スコアボードに登録されている全参加者（オフライン含む）のスコアをクリア
+                for (const participant of dailyObjective.getParticipants()) {
+                    dailyObjective.removeParticipant(participant);
+                }
+            }
+            // ワールド全体のデイリーリセット日プロパティを更新
+            world.setDynamicProperty(WORLD_DAILY_RESET_DATE_PROP, currentDateStr);
+
+            // 現在オンラインのプレイヤーの個別日付プロパティおよびスコアボードも同期的にリセット
+            for (const player of world.getAllPlayers()) {
+                player.setDynamicProperty(DAILY_MINING_DATE_PROP, currentDateStr);
+                if (dailyObjective) {
+                    dailyObjective.setScore(player, 0);
+                }
+            }
+
+            // ログ権限を持つプレイヤーへの通知
+            for (const p of world.getAllPlayers()) {
+                if (p.hasTag(TAG_LOG)) {
+                    p.sendMessage(`§a[MSSlog]§7ワールドのデイリーリセットが実行されました：${currentDateStr}`);
+                }
+            }
+        }
+    } catch (e) {
+        console.error(`[MiningRanking] Failed world daily reset check: ${e}`);
+    }
+}
+
 // --- 初期化処理 ---
 
 /**
@@ -130,6 +175,9 @@ world.afterEvents.worldInitialize.subscribe(() => {
 
     // ルーレット初期化（スコアボード作成）
     RouletteSystem.initialize();
+
+    // 初期化時にデイリーリセット判定を実施
+    checkWorldDailyReset();
 });
 
 // --- イベントリスナー ---
@@ -140,6 +188,9 @@ world.afterEvents.worldInitialize.subscribe(() => {
 world.afterEvents.playerJoin.subscribe(event => {
     const { player } = event;
     
+    // ログイン時に日付変更判定とデイリーリセットチェックを実施
+    checkWorldDailyReset();
+
     // 参加時刻を記録 (5秒間の初期化猶予のため)
     playerJoinTimes[player.id] = Date.now();
 
@@ -413,6 +464,8 @@ system.afterEvents.scriptEventReceive.subscribe(event => {
         showRank(sourceEntity);
     } else if (id === RANK_ALL_EVENT_ID) {
         showRankAll(sourceEntity);
+    } else if (id === RANK_DAILY_EVENT_ID) {
+        showDailyRank(sourceEntity);
     } else if (id === SUMMARY_EVENT_ID) {
         showSummary(sourceEntity);
     } else if (id === RESET_EVENT_ID) {
@@ -440,17 +493,22 @@ world.afterEvents.itemUse.subscribe(event => {
     const { source, itemStack } = event;
     if (source.typeId !== 'minecraft:player') return;
 
-    // コンパス使用でランキング表示
+    // コンパス使用時の処理（スニーク状態ならデイリーランキング、通常状態なら全体ランキングを表示）
     if (itemStack.typeId === 'minecraft:compass') {
         system.run(() => {
-            showRank(source);
+            if (source.isSneaking) {
+                showDailyRank(source);
+            } else {
+                showRank(source);
+            }
         });
-        for(const p of world.getAllPlayers()){
-            if(p.hasTag(TAG_LOG)){
-                p.sendMessage(`§a[MSSlog]§7アイテム使用：${source.name}, ${itemStack.typeId}`);
+        for (const p of world.getAllPlayers()) {
+            if (p.hasTag(TAG_LOG)) {
+                p.sendMessage(`§a[MSSlog]§7アイテム使用（コンパス）：${source.name} (スニーク: ${source.isSneaking})`);
             }
         }
     } 
+
     // 宝箱を使用
     else if (itemStack.typeId === 'mss:nakoiribukuro') {
         startChestRoulette(source);
@@ -649,6 +707,9 @@ function showVersion(player) {
  */
 function showRank(player) {
     try {
+        // 表示する前に日付切り替え判定（デイリーリセット）を行う
+        checkWorldDailyReset();
+
         const objective = world.scoreboard.getObjective(MINING_COUNT_OBJECTIVE);
         if (!objective) {
             player.sendMessage("§a[MSS]§cランキングデータを取得できませんでした。");
@@ -795,6 +856,86 @@ function showRankAll(player) {
         }
     }
 }
+
+/**
+ * デイリー採掘数ランキングをプレイヤーに表示します。
+ * スコアボード `daily_mining` から上位10名を取得してチャットに出力します。
+ * @param {import("@minecraft/server").Player} player コマンドを実行またはコンパスを使用したプレイヤー
+ */
+function showDailyRank(player) {
+    try {
+        // 表示する前に日付切り替え判定（デイリーリセット）を行う
+        checkWorldDailyReset();
+
+        const objective = world.scoreboard.getObjective(DAILY_MINING_OBJECTIVE);
+        if (!objective) {
+            player.sendMessage("§a[MSS]§cデイリーランキングデータを取得できませんでした。");
+            return;
+        }
+
+        // 参加者のスコアを取得し、降順（スコアが多い順）にソート
+        const scores = objective.getScores();
+        scores.sort((a, b) => b.score - a.score);
+
+        // プレイヤー名を取得するためのマップとオンラインプレイヤーのリストを取得
+        const nameMapStr = world.getDynamicProperty(PLAYER_NAME_MAP_PROP);
+        const nameMap = nameMapStr ? JSON.parse(nameMapStr) : {};
+        const onlinePlayers = world.getAllPlayers();
+
+        /**
+         * スコアボードの参加者情報から表示するプレイヤー名を取得するヘルパー関数
+         * オンラインプレイヤーは現在の名前、オフラインプレイヤーは保存された名前を使用します。
+         */
+        const getPlayerNameFromParticipant = (participant) => {
+            // オンラインプレイヤーから検索
+            const onlinePlayer = onlinePlayers.find(p => p.scoreboardIdentity?.id === participant.id);
+            if (onlinePlayer) {
+                return onlinePlayer.name;
+            }
+            // オフラインプレイヤーの場合は保存された名前マップから検索
+            if (nameMap[participant.id]) {
+                return nameMap[participant.id];
+            }
+            // いずれにもない場合はデフォルトの表示名またはプレースホルダー
+            return participant.displayName.startsWith("commands.") ? "(不明なオフラインプレイヤー)" : participant.displayName;
+        };
+        
+        player.sendMessage("§a[MSS]§l§b--- デイリー採掘数ランキング TOP10 ---");
+
+        // 上位10名を取り出してチャットに表示
+        const top10 = scores.slice(0, 10);
+        if (top10.length === 0) {
+            player.sendMessage("§e本日の採掘データはまだありません。");
+        } else {
+            top10.forEach((entry, index) => {
+                const playerName = getPlayerNameFromParticipant(entry.participant);
+                player.sendMessage(`§e${index + 1}位: §f${playerName} §7- §r${entry.score}個`);
+            });
+        }
+
+        player.sendMessage("§b--------------------");
+
+        // 実行した本人の今日の採掘数と順位を表示
+        const myScore = objective.getScore(player) ?? 0;
+        const participantId = player.scoreboardIdentity?.id;
+        const myRank = participantId ? scores.findIndex(s => s.participant.id === participantId) + 1 : 0;
+
+        if (myRank > 0) {
+            player.sendMessage(`§aあなたの本日の順位: ${myRank}位 (${myScore}個)`);
+        } else {
+            player.sendMessage(`§aあなたの本日の採掘数: ${myScore}個 (ランク外)`);
+        }
+    } catch (e) {
+        player.sendMessage("§a[MSS]§cデイリーランキングの表示中にエラーが発生しました。");
+        console.error(`[MiningRanking] Error in showDailyRank: ${e}`);
+        for (const p of world.getAllPlayers()) {
+            if (p.hasTag(TAG_LOG)) {
+                p.sendMessage(`§a[MSSlog]§cデイリーランキング表示エラー：${e}`);
+            }
+        }
+    }
+}
+
 
 
 /**

@@ -88,6 +88,40 @@ const EXCLUDED_BLOCKS = new Set([
     "minecraft:black_shulker_box",
 ]);
 
+// --- 下掘り警告判定から除外するブロックのリスト（配列） ---
+// プレイヤーが以下のブロックを破壊（採掘）した場合は、頭上のチェックおよび下掘り警告の判定処理がスキップされます。
+// 誤検知を防ぎたいブロック（はしご、松明など）をこの配列に定義します。
+const WARNING_EXCLUDED_BLOCKS = [
+    "minecraft:ladder",        // はしご
+    "minecraft:vine",          // ツタ
+    "minecraft:torch",         // 松明
+    "minecraft:soul_torch",    // ソウルソウルトーチ
+    "minecraft:redstone_torch",// レッドストーントーチ
+    "minecraft:lantern",       // ランタン
+    "minecraft:soul_lantern",  // ソウルランタン
+    "minecraft:chest",         // チェスト
+    "minecraft:undyed_shulker_box",
+    "minecraft:white_shulker_box",
+    "minecraft:orange_shulker_box",
+    "minecraft:magenta_shulker_box",
+    "minecraft:light_blue_shulker_box",
+    "minecraft:yellow_shulker_box",
+    "minecraft:lime_shulker_box",
+    "minecraft:pink_shulker_box",
+    "minecraft:gray_shulker_box",
+    "minecraft:light_gray_shulker_box",
+    "minecraft:cyan_shulker_box",
+    "minecraft:purple_shulker_box",
+    "minecraft:blue_shulker_box",
+    "minecraft:brown_shulker_box",
+    "minecraft:green_shulker_box",
+    "minecraft:red_shulker_box",
+    "minecraft:black_shulker_box",
+    "minecraft:cherry_log",
+    "minecraft:cherry_leaves",
+    
+];
+
 // --- グローバル変数 ---
 
 // リセット要求を管理するオブジェクト { playerId: timestamp }
@@ -279,13 +313,18 @@ world.afterEvents.playerBreakBlock.subscribe(event => {
 
     // 採掘場所周辺のチェック（露天掘り判定）
     // 掘ったブロックの上5マス目を確認し、空気ブロック以外があれば警告を出力する
-    if (!player.hasTag("whiteList")) {
+    // ただし、以下の場合は判定を行いません：
+    // 1. プレイヤーがホワイトリスト（whiteListタグ）に登録されている場合
+    // 2. 破壊したブロックが警告除外リスト（WARNING_EXCLUDED_BLOCKS）に含まれている場合
+    // 3. 破壊したブロックが鉱石ブロックである場合（ブロックIDに "ore" が含まれるか判定）
+    const isExcludedBlock = WARNING_EXCLUDED_BLOCKS.includes(blockId) || blockId.includes("ore");
+    if (!player.hasTag("whiteList") && !isExcludedBlock) {
         try {
             const { x, y, z } = event.block.location;
             const dimension = event.block.dimension;
             let hasNonAirAbove = false;
 
-            // 上5ブロック目のみチェック
+            // 上5ブロック目（既存コードの y + 7）のみチェック
             const blockAbove = dimension.getBlock({ x: x, y: y + 7, z: z });
             if (blockAbove && blockAbove.typeId !== "minecraft:air") {
                 hasNonAirAbove = true;
@@ -303,19 +342,22 @@ world.afterEvents.playerBreakBlock.subscribe(event => {
                 // 5秒以内の履歴のみ保持（古い警告をフィルタリング）
                 warningHistory[player.id] = warningHistory[player.id].filter(t => now - t <= 5000);
 
-                // 5秒以内に3回以上警告が記録された場合のみログを出力
-                // 5秒以内に3回以上警告が記録された場合のみログを出力
-                if (warningHistory[player.id].length >= 3) {
+                // 5秒以内に5回以上警告が記録された場合のみログを出力
+                if (warningHistory[player.id].length >= 5) {
                     const lastLog = lastLogTime[player.id] || 0;
+
+                    player.sendMessage(`§c[MSS]§e警告：下堀りを検知しました。必ず上から掘ってください。繰り返される場合、OPによって処罰される可能性があります。`);
                     
-                    // 前回のログ出力から5秒以上経過している場合のみ出力
+                    // 前回のログ出力から5秒以上経過している場合のみ出力（連投スパム防止）
                     if (now - lastLog >= 5000) {
+                        // ログ監視用タグ（logListener）を持つプレイヤー全員に通知
                         for (const p of world.getAllPlayers()) {
                             if (p.hasTag(TAG_LOG)) {
                                 // 警告メッセージ: 上5ブロック目に障害物があることを通知
                                 p.sendMessage(`§a[MSSlog]§e下掘り検知：§e${player.name} §7(${x}, ${y}, ${z})`);
                             }
                         }
+
                         // ログを出力したら履歴をリセット
                         warningHistory[player.id] = [];
                         // 最終ログ出力時刻を更新

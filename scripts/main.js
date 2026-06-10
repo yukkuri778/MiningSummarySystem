@@ -342,11 +342,11 @@ world.afterEvents.playerBreakBlock.subscribe(event => {
                 // 5秒以内の履歴のみ保持（古い警告をフィルタリング）
                 warningHistory[player.id] = warningHistory[player.id].filter(t => now - t <= 5000);
 
-                // 5秒以内に5回以上警告が記録された場合のみログを出力
-                if (warningHistory[player.id].length >= 5) {
+                // 5秒以内に7回以上警告が記録された場合のみログを出力
+                if (warningHistory[player.id].length >= 7) {
                     const lastLog = lastLogTime[player.id] || 0;
 
-                    player.sendMessage(`§c[MSS]§e警告：下堀りを検知しました。必ず上から掘ってください。繰り返される場合、OPによって処罰される可能性があります。`);
+                    player.sendMessage(`§c[MSS]§e警告：下堀りを検知しました。必ず上から掘ってください。繰り返される場合、管理者によって処罰される可能性があります。`);
                     
                     // 前回のログ出力から5秒以上経過している場合のみ出力（連投スパム防止）
                     if (now - lastLog >= 5000) {

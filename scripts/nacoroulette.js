@@ -91,6 +91,13 @@ const SYMBOL_TABLE = [
 // ルーレット実行フラグ用プロパティ
 const ROULETTE_PLAYING_PROP = "mss:nacoroulette_playing";
 
+// SYMBOL_TABLE の重みの合計を定数として事前計算する。
+// 旧実装: getRandomSymbol() 内で毎回 reduce() を実行していた。
+// ルーレット1回あたり 40〜70 回 getRandomSymbol() が呼ばれるため、
+// その都度 reduce() が走ることで不要な計算コストが発生していた。
+// 定数として定義することで1回だけ計算し、以降はその値を使い回す。
+const TOTAL_WEIGHT = SYMBOL_TABLE.reduce((sum, item) => sum + item.weight, 0);
+
 /**
  * ルーレットシステムクラス
  */
@@ -123,9 +130,8 @@ export class NacoRoulette {
      * 重みに基づいてランダムなシンボルを1つ取得する
      */
     static getRandomSymbol() {
-        // 重みの合計を計算
-        const totalWeight = SYMBOL_TABLE.reduce((sum, item) => sum + item.weight, 0);
-        let random = Math.random() * totalWeight;
+        // TOTAL_WEIGHT はモジュール定数として事前計算済み（毎回 reduce() を実行していた旧実装を改善）
+        let random = Math.random() * TOTAL_WEIGHT;
 
         for (const symbol of SYMBOL_TABLE) {
             if (random < symbol.weight) {

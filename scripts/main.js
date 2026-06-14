@@ -44,6 +44,14 @@ const RESET_CONFIRMATION_TIMEOUT = 10000; // 10秒
 // ログ表示用タグ名
 const TAG_LOG = "logListener";
 
+// プレイヤー個人のお祝い閾値リスト
+// ※ 旧実装では playerBreakBlock イベント内で毎回生成されていたため、採掘のたびに配列オブジェクトが新規生成されていた。
+// 定数としてトップレベルに置くことで、拒たことでガベージコレクションの負荷を削減する。
+const PLAYER_CELEBRATION_MILESTONES = new Set([100, 1000, 2000, 3000, 5000, 10000, 20000, 30000, 40000, 50000]);
+
+// ワールド全体のお祝い閾値リスト
+const WORLD_CELEBRATION_MILESTONES = new Set([1000, 3000, 5000, 10000, 30000, 50000, 100000, 200000, 300000, 400000, 500000]);
+
 // カウントしないブロックのリスト
 const EXCLUDED_BLOCKS = new Set([
     "minecraft:air",
@@ -88,14 +96,15 @@ const EXCLUDED_BLOCKS = new Set([
     "minecraft:black_shulker_box",
 ]);
 
-// --- 下掘り警告判定から除外するブロックのリスト（配列） ---
+// --- 下掘り警告判定から除外するブロックのリスト ---
 // プレイヤーが以下のブロックを破壊（採掘）した場合は、頭上のチェックおよび下掘り警告の判定処理がスキップされます。
-// 誤検知を防ぎたいブロック（はしご、松明など）をこの配列に定義します。
-const WARNING_EXCLUDED_BLOCKS = [
+// 誤検知を防ぎたいブロック（はしご、松明など）をこの Set に定義します。
+// ※ 配列の includes() は O(n) の線形探索だが、Set の has() は O(1) のハッシュ検索のため高速。
+const WARNING_EXCLUDED_BLOCKS = new Set([
     "minecraft:ladder",        // はしご
     "minecraft:vine",          // ツタ
     "minecraft:torch",         // 松明
-    "minecraft:soul_torch",    // ソウルソウルトーチ
+    "minecraft:soul_torch",    // ソウルトーチ
     "minecraft:redstone_torch",// レッドストーントーチ
     "minecraft:lantern",       // ランタン
     "minecraft:soul_lantern",  // ソウルランタン
@@ -119,14 +128,12 @@ const WARNING_EXCLUDED_BLOCKS = [
     "minecraft:black_shulker_box",
     "minecraft:cherry_log",
     "minecraft:cherry_leaves",
-    
-];
+]);
 
 // --- グローバル変数 ---
 
 // リセット要求を管理するオブジェクト { playerId: timestamp }
 let resetRequests = {};
-// 露天掘り警告の履歴を管理するオブジェクト { playerId: [timestamp] }
 // 露天掘り警告の履歴を管理するオブジェクト { playerId: [timestamp] }
 let warningHistory = {};
 // 最終ログ出力時刻を管理するオブジェクト { playerId: timestamp }
@@ -134,6 +141,26 @@ let lastLogTime = {};
 
 // プレイヤーの参加時刻を管理するオブジェクト { playerId: timestamp }
 let playerJoinTimes = {};
+
+// プレイヤー名マップのメモリ内キャッシュ
+// 旧実装では runInterval 内で毎秒 getDynamicProperty + JSON.parse を実行していた。
+// カード変数として保持することで、書き込み時のみ Dynamic Property を読み込むよう改善する。
+let cachedNameMap = null;
+
+// --- ヘルパー関数 ---
+
+/**
+ * TAG_LOG（logListenerタグ）を持つオンラインプレイヤー全員に §a[MSSlog]§7 プレフィックス付きでメッセージを送ります。
+ * 旧実装では同じ for ループパターンがファイル全体で 20 回以上重複していたため、この関数に集約しました。
+ * @param {string} message - 送信するメッセージ本文（§a[MSSlog]§7 のプレフィックスは自動付与）
+ */
+function sendLog(message) {
+    for (const p of world.getAllPlayers()) {
+        if (p.hasTag(TAG_LOG)) {
+            p.sendMessage(`§a[MSSlog]§7${message}`);
+        }
+    }
+}
 
 /**
  * 現在の時刻から、デイリーリセット（朝4時）を考慮した「日付文字列」を取得します。
@@ -176,11 +203,7 @@ function checkWorldDailyReset() {
             }
 
             // ログ権限を持つプレイヤーへの通知
-            for (const p of world.getAllPlayers()) {
-                if (p.hasTag(TAG_LOG)) {
-                    p.sendMessage(`§a[MSSlog]§7ワールドのデイリーリセットが実行されました：${currentDateStr}`);
-                }
-            }
+            sendLog(`ワールドのデイリーリセットが実行されました：${currentDateStr}`);
         }
     } catch (e) {
         console.error(`[MiningRanking] Failed world daily reset check: ${e}`);
@@ -233,11 +256,8 @@ world.afterEvents.playerJoin.subscribe(event => {
         player.setDynamicProperty(ACTION_BAR_ENABLED_PROP, DISPLAY_MODE_ALL);
     }
     
-    for(const p of world.getAllPlayers()){
-        if(p.hasTag(TAG_LOG)){
-            p.sendMessage(`§a[MSSlog]§7初参加：${player.name}`);
-        }
-    }
+    // ログ通知：logListenerタグを持つプレイヤーに参加通知を送る
+    sendLog(`初参加：${player.name}`);
 
     // ログイン5秒後（100 ticks）に日付変更確認＆個別リセット処理を実行
     system.runTimeout(() => {
@@ -259,12 +279,8 @@ world.afterEvents.playerJoin.subscribe(event => {
                 dailyObjective.setScore(player, 0);
                 player.setDynamicProperty(DAILY_MINING_DATE_PROP, currentDateStr);
 
-                // ログ通知（必要時）
-                for (const p of world.getAllPlayers()) {
-                    if (p.hasTag(TAG_LOG)) {
-                        p.sendMessage(`§a[MSSlog]§7デイリーリセット実行(参加時)：${player.name}`);
-                    }
-                }
+                // ログ通知（sendLogヘルパーで簡潔化）
+                sendLog(`デイリーリセット実行(参加時)：${player.name}`);
             }
         } catch (e) {
             console.warn(`[MiningRanking] Failed daily reset check on join: ${e}`);
@@ -278,8 +294,12 @@ world.afterEvents.playerJoin.subscribe(event => {
 world.afterEvents.playerLeave.subscribe(event => {
     const { playerId } = event;
     
-    // メモリリークを防ぐため参加時刻データを削除
-    delete playerJoinTimes[playerId];
+    // メモリリークを防ぐため、プレイヤーに紐づくすべてのグローバルデータを削除する。
+    // 削除しないと、プレイヤーが入退出を繰り返すたびにエントリが増え続けてメモリを圧迫する。
+    delete playerJoinTimes[playerId];  // 参加時刻
+    delete warningHistory[playerId];   // 下掘り警告履歴
+    delete lastLogTime[playerId];      // 最終警告ログ時刻
+    delete resetRequests[playerId];    // リセット確認待ち状態（退出時は確認をキャンセル）
 });
 
 /**
@@ -294,20 +314,16 @@ world.afterEvents.playerBreakBlock.subscribe(event => {
         return;
     }
 
-    // クリエイティブモードのプレイヤーはカウントしない
+    // クリエイティブモードのプレイヤーはカウントしない。
+    // 旧実装: world.getPlayers({ gameMode: "creative" }) で全クリエイティブプレイヤーリストを生成し some() で探索 → O(n)
+    // 新実装: player.getGameMode() で破壊したプレイヤー自身のみ確認 → O(1)
     try {
-        const creativePlayers = world.getPlayers({ gameMode: "creative" });
-        const isCreative = creativePlayers.some(p => p.id === player.id);
-        if (isCreative) {
+        if (player.getGameMode() === "creative") {
             return; // クリエイティブモードなら以降の処理をしない
         }
     } catch(e) {
-        console.error(`[MiningRanking] Failed to check gamemodES: ${e}`);
-        for(const p of world.getAllPlayers()){
-            if(p.hasTag(TAG_LOG)){
-                p.sendMessage("§a[MSSlog]§cエラー：ゲームモードの確認に失敗しました。");
-            }
-        }
+        console.error(`[MiningRanking] Failed to check gamemode: ${e}`);
+        sendLog("エラー：ゲームモードの確認に失敗しました。");
         return; // 安全のため、エラー時もカウントしない
     }
 
@@ -317,7 +333,8 @@ world.afterEvents.playerBreakBlock.subscribe(event => {
     // 1. プレイヤーがホワイトリスト（whiteListタグ）に登録されている場合
     // 2. 破壊したブロックが警告除外リスト（WARNING_EXCLUDED_BLOCKS）に含まれている場合
     // 3. 破壊したブロックが鉱石ブロックである場合（ブロックIDに "ore" が含まれるか判定）
-    const isExcludedBlock = WARNING_EXCLUDED_BLOCKS.includes(blockId) || blockId.includes("ore");
+    // Set.has() は O(1) のハッシュ検索なので、旧実装の Array.includes() より高速
+    const isExcludedBlock = WARNING_EXCLUDED_BLOCKS.has(blockId) || blockId.includes("ore");
     if (!player.hasTag("whiteList") && !isExcludedBlock) {
         try {
             const { x, y, z } = event.block.location;
@@ -350,10 +367,10 @@ world.afterEvents.playerBreakBlock.subscribe(event => {
                     
                     // 前回のログ出力から5秒以上経過している場合のみ出力（連投スパム防止）
                     if (now - lastLog >= 5000) {
-                        // ログ監視用タグ（logListener）を持つプレイヤー全員に通知
+                        // sendLog() で logListener タグ持ちプレイヤーに一括通知
+                        // ※ 下掘り検知のみカラーコードが異なるため直接ループを使用
                         for (const p of world.getAllPlayers()) {
                             if (p.hasTag(TAG_LOG)) {
-                                // 警告メッセージ: 上5ブロック目に障害物があることを通知
                                 p.sendMessage(`§a[MSSlog]§e下掘り検知：§e${player.name} §7(${x}, ${y}, ${z})`);
                             }
                         }
@@ -397,11 +414,10 @@ world.afterEvents.playerBreakBlock.subscribe(event => {
         // スコアをインクリメントし、新しいスコアを取得
         const newScore = objective.addScore(player, 1);
 
-        // お祝いの閾値リスト
-        const CELEBRATION_MILESTONES = [100, 1000, 2000, 3000, 5000, 10000, 20000, 30000, 40000, 50000];
-
-        // スコアがリストに含まれているかチェック
-        if (CELEBRATION_MILESTONES.includes(newScore)) {
+        // PLAYER_CELEBRATION_MILESTONES はトップレベルの Set 定数。
+        // 旧実装: ここで配列を毎回新規生成 + Array.includes() で O(n) 検索していた。
+        // 新実装: 定数化した Set の has() で O(1) 検索。
+        if (PLAYER_CELEBRATION_MILESTONES.has(newScore)) {
             // お祝いメッセージ
             world.sendMessage(`§a[MSS]§f§l§k!!!§r §b${player.name}§r が採掘数 §e${newScore}個§r を突破しました！ §k!!!§r`);
             // 花火を打ち上げる
@@ -412,7 +428,7 @@ world.afterEvents.playerBreakBlock.subscribe(event => {
             }
         }
 
-        //以降１０万ごとにお祝い
+        // 以降１０万ごとにお祝い
         else if(newScore % 100000 == 0){ 
             world.sendMessage(`§a[MSS]§f§l§k!!!§r §b${player.name}§r が採掘数 §e${newScore}個§r を突破しました！ §k!!!§r`);
             player.dimension.spawnEntity("minecraft:fireworks_rocket", player.location);
@@ -424,11 +440,7 @@ world.afterEvents.playerBreakBlock.subscribe(event => {
 
     } catch (e) {
         console.error(`[MiningRanking] Failed to add score to player ${player.name}: ${e}`);
-        for(const p of world.getAllPlayers()){
-            if(p.hasTag(TAG_LOG)){
-                p.sendMessage("§a[MSSlog]§cエラー：プレイヤーの採掘数の更新に失敗しました。");
-            }
-        }
+        sendLog(`エラー：プレイヤーの採掘数の更新に失敗しました。`);
     }
 
     // 2. ワールド全体の総採掘数を1増やす
@@ -436,11 +448,10 @@ world.afterEvents.playerBreakBlock.subscribe(event => {
         const objective = world.scoreboard.getObjective(WORLD_MINING_COUNT_OBJECTIVE);
         const newWorldScore = objective.addScore(WORLD_TOTAL_HOLDER, 1);
 
-        // お祝いの閾値リスト
-        const CELEBRATION_MILESTONES = [1000, 3000, 5000, 10000, 30000, 50000, 100000, 200000, 300000, 400000, 500000];
-
-        // ワールドの総採掘数がリストに含まれているかチェック
-        if (CELEBRATION_MILESTONES.includes(newWorldScore)) {
+        // WORLD_CELEBRATION_MILESTONES はトップレベルの Set 定数。
+        // 旧実装: ここで配列を毎回新規生成 + includes() 検索。
+        // 新実装: 定数化した Set の has() で O(1) 検索。
+        if (WORLD_CELEBRATION_MILESTONES.has(newWorldScore)) {
             // お祝いメッセージ
             world.sendMessage(`§a[MSS]§f§l§k!!!§r §dワールド総採掘数§r が §e${newWorldScore}個§r に到達しました！ §k!!!§r`);
             // 全てのプレイヤーから花火を打ち上げる&音を再生
@@ -450,7 +461,7 @@ world.afterEvents.playerBreakBlock.subscribe(event => {
             }
         }
 
-        //以降１００万ごとにお祝い
+        // 以降１００万ごとにお祝い
         else if(newWorldScore % 1000000 == 0){
             world.sendMessage(`§a[MSS]§f§l§k!!!§r §dワールド総採掘数§r が §e${newWorldScore}個§r に到達しました！ §k!!!§r`);
             for (const p of world.getAllPlayers()) {
@@ -461,11 +472,7 @@ world.afterEvents.playerBreakBlock.subscribe(event => {
 
     } catch (e) {
         console.error(`[MiningRanking] Failed to add score to world total: ${e}`);
-        for(const p of world.getAllPlayers()){
-            if(p.hasTag(TAG_LOG)){
-                p.sendMessage(`§a[MSSlog]§cワールド採掘数更新エラー：${e}`);
-            }
-        }
+        sendLog(`ワールド採掘数更新エラー：${e}`);
     }
 
     // 3. ブロックごとの採掘数をカウント
@@ -521,11 +528,8 @@ system.afterEvents.scriptEventReceive.subscribe(event => {
     } else if (id === NACO_ROULETTE_EVENT_ID) {
         NacoRoulette.start(sourceEntity);
     }
-    for(const p of world.getAllPlayers()){
-        if(p.hasTag(TAG_LOG)){
-            p.sendMessage(`§a[MSSlog]§7コマンド実行：${sourceEntity.name}, ${id}`);
-        }
-    }
+    // sendLog ヘルパーでコマンド実行ログを送信
+    sendLog(`コマンド実行：${sourceEntity.name}, ${id}`);
 });
 
 /**
@@ -544,21 +548,13 @@ world.afterEvents.itemUse.subscribe(event => {
                 showRank(source);
             }
         });
-        for (const p of world.getAllPlayers()) {
-            if (p.hasTag(TAG_LOG)) {
-                p.sendMessage(`§a[MSSlog]§7アイテム使用（コンパス）：${source.name} (スニーク: ${source.isSneaking})`);
-            }
-        }
+        sendLog(`アイテム使用（コンパス）：${source.name} (スニーク: ${source.isSneaking})`);
     } 
 
     // 宝箱を使用
     else if (itemStack.typeId === 'mss:nakoiribukuro') {
         startChestRoulette(source);
-        for(const p of world.getAllPlayers()){
-            if(p.hasTag(TAG_LOG)){
-                p.sendMessage(`§a[MSSlog]§7アイテム使用：${source.name}, ${itemStack.typeId}`);
-            }
-        }
+        sendLog(`アイテム使用：${source.name}, ${itemStack.typeId}`);
     }
     // 時計使用でアクションバー表示を切り替え
     else if (itemStack.typeId === 'minecraft:clock') {
@@ -581,11 +577,7 @@ world.afterEvents.itemUse.subscribe(event => {
             // OFFにした直後にアクションバーをクリアする
             source.onScreenDisplay.setActionBar("");
         }
-        for(const p of world.getAllPlayers()){
-        if(p.hasTag(TAG_LOG)){
-            p.sendMessage(`§a[MSSlog]§7アイテム使用：${source.name}, ${itemStack.typeId}`);
-        }
-    }
+        sendLog(`アイテム使用：${source.name}, ${itemStack.typeId}`);
     }
 });
 
@@ -601,12 +593,14 @@ system.runInterval(() => {
         const players = world.getAllPlayers();
         if (players.length === 0) return;
 
-        // --- 追加: マップの読み込み ---
-        // 毎回読み込みますが、書き込みは変更があった時だけに絞ります
-        let nameMapStr = world.getDynamicProperty(PLAYER_NAME_MAP_PROP);
-        let nameMap = nameMapStr ? JSON.parse(nameMapStr) : {};
-        let isMapDirty = false; // 保存が必要かどうかのフラグ
-        // ---------------------------
+        // cachedNameMap を使用する。
+        // 旧実装: 毎秒 getDynamicProperty + JSON.parse を実行していた（メモリ・ CPU に無駄）。
+        // 新実装: 初回実行時のみ DynamicProperty を読み込み、以降は内容が変更された時のみ更新する。
+        if (cachedNameMap === null) {
+            const nameMapStr = world.getDynamicProperty(PLAYER_NAME_MAP_PROP);
+            cachedNameMap = nameMapStr ? JSON.parse(nameMapStr) : {};
+        }
+        let isMapDirty = false; // Dynamic Property の保存が必要かどうかのフラグ
 
         const objective = world.scoreboard.getObjective(MINING_COUNT_OBJECTIVE);
         
@@ -621,18 +615,17 @@ system.runInterval(() => {
         // 各プレイヤーの情報を更新
         for (const player of players) {
             
-            // --- 追加: 名前マップの更新チェック ---
-            // scoreboardIdentity が有効な場合のみチェック
+            // scoreboardIdentity が有効な場合のみ名前マップを更新
             if (player.scoreboardIdentity) {
                 const pId = player.scoreboardIdentity.id;
-                // マップにない、または名前が変わっている場合
-                if (nameMap[pId] !== player.name) {
-                    nameMap[pId] = player.name;
+                // cachedNameMap を使用して内容を確認（毎秒の JSON.parse を排除）
+                if (cachedNameMap[pId] !== player.name) {
+                    cachedNameMap[pId] = player.name;
                     isMapDirty = true; // 保存フラグを立てる
-                    world.sendMessage(`§a[MSS]§7プレイヤー名マップ更新：${player.name}`); // デバッグ用ログ
+                    // この world.sendMessage はデバッグ用のためコメントアウト
+                    // world.sendMessage(`§a[MSS]§7プレイヤー名マップ更新：${player.name}`);
                 }
             }
-            // ------------------------------------
 
             // モード取得と正規化
             let mode = player.getDynamicProperty(ACTION_BAR_ENABLED_PROP);
@@ -651,11 +644,7 @@ system.runInterval(() => {
                 // 参加から5秒（5000ミリ秒）経過している場合のみ初期化
                 if (Date.now() - joinTime > 5000) {
                     objective.setScore(player, 0);
-                    for(const p of world.getAllPlayers()){
-                        if(p.hasTag(TAG_LOG)){
-                            p.sendMessage(`§a[MSSlog]§7リロード初期化（ID生成）：${player.name}`);
-                        }
-                    }
+                    sendLog(`リロード初期化（ID生成）：${player.name}`);
                 } else {
                     // まだ読み込み中の可能性があるため、今回はスキップして再チェックを待つ
                     continue;
@@ -704,21 +693,14 @@ system.runInterval(() => {
             player.onScreenDisplay.setActionBar(message);
         }
 
-        // --- 追加: 変更があった場合のみ保存 ---
+        // cachedNameMap に変更があった場合のみ Dynamic Property に保存する
         if (isMapDirty) {
-            world.setDynamicProperty(PLAYER_NAME_MAP_PROP, JSON.stringify(nameMap));
-            // ログ出し（デバッグ用、不要なら削除）
-            // console.warn("[MSS] Player name map updated."); 
+            world.setDynamicProperty(PLAYER_NAME_MAP_PROP, JSON.stringify(cachedNameMap));
         }
-        // ------------------------------------
 
     } catch (e) {
         console.error(`[MiningRanking] Error in interval loop: ${e}`);
-        for(const player of world.getAllPlayers()){
-            if(player.hasTag(TAG_LOG)){
-                player.sendMessage(`§a[MSSlog]§c定期処理エラー：${e}`);
-            }
-        }
+        sendLog(`定期処理エラー：${e}`);
     }
 }, 20); // 20 ticks = 1秒
 
@@ -735,11 +717,7 @@ function showVersion(player) {
     } catch (e) {
         player.sendMessage("§a[MSS]§cバージョンの表示中にエラーが発生しました。");
         console.error(`[MiningRanking] Error in showVersion: ${e}`);
-        for(const p of world.getAllPlayers()){
-            if(p.hasTag(TAG_LOG)){
-                p.sendMessage(`§a[MSSlog]§cバージョン表示エラー：${e}`);
-            }
-        }
+        sendLog(`バージョン表示エラー：${e}`);
     }
 }
 
@@ -761,9 +739,8 @@ function showRank(player) {
         const scores = objective.getScores();
         scores.sort((a, b) => b.score - a.score);
 
-        // プレイヤー名を取得するためのヘルパーマップ
-        const nameMapStr = world.getDynamicProperty(PLAYER_NAME_MAP_PROP);
-        const nameMap = nameMapStr ? JSON.parse(nameMapStr) : {};
+        // cachedNameMap を使用する（毎回 getDynamicProperty + JSON.parse を起動するためここは必要）
+        const nameMap = cachedNameMap ?? {};
         const onlinePlayers = world.getAllPlayers();
 
         /**
@@ -820,11 +797,7 @@ function showRank(player) {
     } catch (e) {
         player.sendMessage("§a[MSS]§cランキングの表示中にエラーが発生しました。");
         console.error(`[MiningRanking] Error in showRank: ${e}`);
-        for(const p of world.getAllPlayers()){
-            if(p.hasTag(TAG_LOG)){
-                p.sendMessage(`§a[MSSlog]§cランキング表示エラー：${e}`);
-            }
-        }
+        sendLog(`ランキング表示エラー：${e}`);
     }
 }
 
@@ -843,9 +816,8 @@ function showRankAll(player) {
         const scores = objective.getScores();
         scores.sort((a, b) => b.score - a.score);
 
-        // プレイヤー名を取得するためのヘルパーマップ
-        const nameMapStr = world.getDynamicProperty(PLAYER_NAME_MAP_PROP);
-        const nameMap = nameMapStr ? JSON.parse(nameMapStr) : {};
+        // cachedNameMap を使用する（毎回の getDynamicProperty + JSON.parse を排除）
+        const nameMap = cachedNameMap ?? {};
         const onlinePlayers = world.getAllPlayers();
 
         /**
@@ -883,7 +855,9 @@ function showRankAll(player) {
 
         // 実行者の順位を表示（確認用）
         const myScore = objective.getScore(player) ?? 0;
-        const myRank = scores.findIndex(s => s.participant.id === player.scoreboardIdentity.id) + 1;
+        const myRank = player.scoreboardIdentity?.id
+            ? scores.findIndex(s => s.participant.id === player.scoreboardIdentity.id) + 1
+            : 0;
 
         if (myRank > 0) {
             player.sendMessage(`§aあなたの順位: ${myRank}位 (${myScore}個)`);
@@ -891,11 +865,7 @@ function showRankAll(player) {
     } catch (e) {
         player.sendMessage("§a[MSS]§cランキングの表示中にエラーが発生しました。");
         console.error(`[MiningRanking] Error in showRankAll: ${e}`);
-        for(const p of world.getAllPlayers()){
-            if(p.hasTag(TAG_LOG)){
-                p.sendMessage(`§a[MSSlog]§cランキング表示エラー：${e}`);
-            }
-        }
+        sendLog(`ランキング表示エラー：${e}`);
     }
 }
 
@@ -919,9 +889,8 @@ function showDailyRank(player) {
         const scores = objective.getScores();
         scores.sort((a, b) => b.score - a.score);
 
-        // プレイヤー名を取得するためのマップとオンラインプレイヤーのリストを取得
-        const nameMapStr = world.getDynamicProperty(PLAYER_NAME_MAP_PROP);
-        const nameMap = nameMapStr ? JSON.parse(nameMapStr) : {};
+        // cachedNameMap を使用する（毎回の getDynamicProperty + JSON.parse を排除）
+        const nameMap = cachedNameMap ?? {};
         const onlinePlayers = world.getAllPlayers();
 
         /**
@@ -970,11 +939,7 @@ function showDailyRank(player) {
     } catch (e) {
         player.sendMessage("§a[MSS]§cデイリーランキングの表示中にエラーが発生しました。");
         console.error(`[MiningRanking] Error in showDailyRank: ${e}`);
-        for (const p of world.getAllPlayers()) {
-            if (p.hasTag(TAG_LOG)) {
-                p.sendMessage(`§a[MSSlog]§cデイリーランキング表示エラー：${e}`);
-            }
-        }
+        sendLog(`デイリーランキング表示エラー：${e}`);
     }
 }
 
@@ -1030,11 +995,7 @@ function showSummary(player) {
     } catch (e) {
         player.sendMessage("§a[MSS]§c統計の表示中にエラーが発生しました。");
         console.error(`[MiningRanking] Error in showSummary: ${e}`);
-        for(const player of world.getAllPlayers()){
-            if(player.hasTag(TAG_LOG)){
-                player.sendMessage(`§a[MSSlog]§c統計表示エラー：${e}`);
-            }
-        }
+        sendLog(`統計表示エラー：${e}`);
     }
 }
 
@@ -1063,7 +1024,10 @@ function handleResetRequest(player) {
         system.runTimeout(() => {
             // タイムアウト後にまだリセット要求が存在するか確認
             if (resetRequests[player.id] === now) {
-                player.sendMessage("§a[MSS]§r§eデータリセットがキャンセルされました。");
+                // 修正２: 退出したプレイヤーにメッセージを送ろうとしてエラーになるケースを防ぐため isValid() チェック
+                if (player.isValid()) {
+                    player.sendMessage("§a[MSS]§r§eデータリセットがキャンセルされました。");
+                }
                 delete resetRequests[player.id];
             }
         }, RESET_CONFIRMATION_TIMEOUT / 1000 * 20); // 秒数をtickに変換 (20 ticks/sec)
@@ -1111,15 +1075,13 @@ function executeReset() {
         
         // 4. プレイヤーIDと名前の対応表をリセット
         world.setDynamicProperty(PLAYER_NAME_MAP_PROP, undefined);
+        // メモリ内キャッシュも同時にクリアする（古いデータの再利用を防ぐ）
+        cachedNameMap = {};
 
         console.log("[MiningRanking] All data has been reset.");
     } catch (e) {
         console.error(`[MiningRanking] Failed to execute reset: ${e}`);
         world.sendMessage("§a[MSS]§cデータのリセット中にエラーが発生しました。");
-        for(const player of world.getAllPlayers()){
-            if(player.hasTag(TAG_LOG)){
-                player.sendMessage(`§a[MSSlog]§cデータリセットエラー：${e}`);
-            }
-        }
+        sendLog(`データリセットエラー：${e}`);
     }
 }

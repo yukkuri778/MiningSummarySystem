@@ -68,6 +68,15 @@ export function startChestRoulette(player) {
     const runId = system.runInterval(() => {
         currentTick++;
         
+        // プレイヤーがワールドから離脱していたらインターバルを即座に停止する。
+        // 旧実装では isValid() チェックがなく、ルーレット中にプレイヤーが退出すると
+        // clearRun が呼ばれずインターバルが永続的に残留する可能性があった。
+        // roulette.js / nacoroulette.js には同様のチェックがあったが、こちらだけ抜けていた。
+        if (!player.isValid()) {
+            system.clearRun(runId);
+            return;
+        }
+        
         // ルーレット演出：ランダムな数字を表示
         if (currentTick < RouletteConfig.duration) {
             // パラパラ表示するダミーの金額

@@ -342,7 +342,7 @@ world.afterEvents.playerBreakBlock.subscribe(event => {
             let hasNonAirAbove = false;
 
             // 上5ブロック目（既存コードの y + 7）のみチェック
-            const blockAbove = dimension.getBlock({ x: x, y: y + 7, z: z });
+            const blockAbove = dimension.getBlock({ x: x, y: y + 5, z: z });
             if (blockAbove && blockAbove.typeId !== "minecraft:air") {
                 hasNonAirAbove = true;
             }

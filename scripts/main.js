@@ -328,7 +328,7 @@ world.afterEvents.playerBreakBlock.subscribe(event => {
     }
 
     // 採掘場所周辺のチェック（露天掘り判定）
-    // 掘ったブロックの上5マス目を確認し、空気ブロック以外があれば警告を出力する
+    // 掘ったブロックの上5マス目を確認し、空気or葉ブロック以外があれば警告を出力する
     // ただし、以下の場合は判定を行いません：
     // 1. プレイヤーがホワイトリスト（whiteListタグ）に登録されている場合
     // 2. 破壊したブロックが警告除外リスト（WARNING_EXCLUDED_BLOCKS）に含まれている場合
@@ -343,7 +343,8 @@ world.afterEvents.playerBreakBlock.subscribe(event => {
 
             // 上5ブロック目（既存コードの y + 7）のみチェック
             const blockAbove = dimension.getBlock({ x: x, y: y + 5, z: z });
-            if (blockAbove && blockAbove.typeId !== "minecraft:air") {
+            const isLeaves = blockAbove?.typeId.includes("leaves");
+            if (blockAbove && blockAbove.typeId !== "minecraft:air" && !isLeaves) {
                 hasNonAirAbove = true;
             }
 

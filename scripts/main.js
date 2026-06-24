@@ -334,7 +334,7 @@ world.afterEvents.playerBreakBlock.subscribe(event => {
     // 2. 破壊したブロックが警告除外リスト（WARNING_EXCLUDED_BLOCKS）に含まれている場合
     // 3. 破壊したブロックが鉱石ブロックである場合（ブロックIDに "ore" が含まれるか判定）
     // Set.has() は O(1) のハッシュ検索なので、旧実装の Array.includes() より高速
-    const isExcludedBlock = WARNING_EXCLUDED_BLOCKS.has(blockId) || blockId.includes("ore");
+    const isExcludedBlock = WARNING_EXCLUDED_BLOCKS.has(blockId) || blockId.includes("ore") || blockId.includes("leaves");
     if (!player.hasTag("whiteList") && !isExcludedBlock) {
         try {
             const { x, y, z } = event.block.location;

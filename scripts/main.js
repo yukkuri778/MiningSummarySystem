@@ -5,7 +5,7 @@ import { startChestRoulette } from "./chest_roulette.js";
 
 // --- 定数定義 ---
 
-const BEHAVIOR_PACK_VERSION = "1.7.4"; // パックのバージョン
+const BEHAVIOR_PACK_VERSION = "1.7.5"; // パックのバージョン
 
 // スコアボード名
 const MINING_COUNT_OBJECTIVE = "mining_count"; // プレイヤーごとの採掘数

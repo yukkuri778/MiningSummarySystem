@@ -35,6 +35,7 @@ const RESET_EVENT_ID = "mss:reset";
 const CHECKV_EVENT_ID = "mss:checkV";
 const ROULETTE_EVENT_ID = "mss:roulette";
 const NACO_ROULETTE_EVENT_ID = "mss:naco";
+const CHECK_TPS_EVENT_ID = "mss:checkTPS"; // TPS計測を開始するためのイベントID
 
 const WORLD_DAILY_RESET_DATE_PROP = "mss:world_daily_reset_date"; // ワールド全体で最後にデイリーリセットを行った日付を記録するDynamic Propertyのキー名
 
@@ -528,6 +529,8 @@ system.afterEvents.scriptEventReceive.subscribe(event => {
         RouletteSystem.start(sourceEntity, rouletteId);
     } else if (id === NACO_ROULETTE_EVENT_ID) {
         NacoRoulette.start(sourceEntity);
+    } else if (id === CHECK_TPS_EVENT_ID) {
+        startTpsMeasurement(sourceEntity);
     }
     // sendLog ヘルパーでコマンド実行ログを送信
     sendLog(`コマンド実行：${sourceEntity.name}, ${id}`);
@@ -635,6 +638,11 @@ system.runInterval(() => {
 
             // アクションバー表示がOFFのプレイヤーはスキップ
             if (mode === DISPLAY_MODE_NONE) {
+                continue;
+            }
+
+            // TPS計測中のプレイヤーは通常のアクションバー更新をスキップ
+            if (tpsMeasuringPlayers.has(player.id)) {
                 continue;
             }
 
@@ -1085,4 +1093,87 @@ function executeReset() {
         world.sendMessage("§a[MSS]§cデータのリセット中にエラーが発生しました。");
         sendLog(`データリセットエラー：${e}`);
     }
+}
+
+// --- TPS計測機能 ---
+
+// 現在TPS計測中のプレイヤーIDを管理するSet（二重実行防止用）
+const tpsMeasuringPlayers = new Set();
+
+/**
+ * TPS計測を開始する関数。
+ * 10秒間にわたり、20tickごと（理論上1秒間隔）にサンプルを取得し、
+ * 実際の経過時間から実効TPSを算出する。
+ * 計測完了後、10回分のサンプルから平均TPSを算出してプレイヤーに表示する。
+ *
+ * 仕組み:
+ *   理想状態では 20tick = 1000ms だが、サーバーが重いと 20tick の実行に
+ *   1000ms 以上かかる。この差を利用して TPS = 20 * 1000 / 実際の経過ms で算出する。
+ *
+ * @param {import("@minecraft/server").Player} player - 計測を実行したプレイヤー
+ */
+function startTpsMeasurement(player) {
+    // 既に計測中の場合は重複実行を防ぐ
+    if (tpsMeasuringPlayers.has(player.id)) {
+        player.sendMessage("§a[MSS]§e現在TPS計測中です。完了までお待ちください。");
+        return;
+    }
+
+    tpsMeasuringPlayers.add(player.id);
+    player.sendMessage("§a[MSS]§bTPS計測を開始します...");
+
+    const tpsSamples = [];       // 各サンプルのTPS値を格納する配列
+    let lastSampleTime = Date.now(); // 前回のサンプル取得時刻
+    let sampleCount = 0;         // 取得済みサンプル数
+    const totalSamples = 10;     // 合計サンプル数（20tick × 10 = 200tick = 10秒）
+
+    // 20tickごと（理論上1秒ごと）にサンプルを取得するインターバルを開始
+    const intervalId = system.runInterval(() => {
+        const now = Date.now();
+        const elapsedMs = now - lastSampleTime; // 前回サンプルからの実際の経過時間（ミリ秒）
+        lastSampleTime = now;
+
+        // 実効TPSを算出: 理想なら 20tick / 1000ms * 1000 = 20.0
+        // サーバーが重いと elapsedMs > 1000 になり、TPSが20未満になる
+        const currentTps = (20 / elapsedMs) * 1000;
+        tpsSamples.push(currentTps);
+        sampleCount++;
+
+        // 計測進捗をアクションバーに表示（プレイヤーがまだ有効な場合のみ）
+        if (player.isValid()) {
+            const progress = Math.floor((sampleCount / totalSamples) * 100);
+            player.onScreenDisplay.setActionBar(`§b[TPS計測中] §f${progress}% §7(${sampleCount}/${totalSamples})`);
+        }
+
+        // 10回サンプルを取得したら計測完了
+        if (sampleCount >= totalSamples) {
+            system.clearRun(intervalId); // インターバルを停止
+            tpsMeasuringPlayers.delete(player.id); // 計測中フラグを解除
+
+            // プレイヤーが退出済みの場合は結果を表示しない
+            if (!player.isValid()) return;
+
+            // 平均TPSを算出（全サンプルの合計 ÷ サンプル数）
+            const avgTps = tpsSamples.reduce((sum, v) => sum + v, 0) / tpsSamples.length;
+            // 最小TPS（最も重かった瞬間）と最大TPS（最も軽かった瞬間）を取得
+            const minTps = Math.min(...tpsSamples);
+            const maxTps = Math.max(...tpsSamples);
+
+            // TPS値に応じた色分け表示用のヘルパー関数
+            // 19以上: 緑(正常)、15以上: 黄(やや重い)、それ以下: 赤(重い)
+            const colorize = (tps) => {
+                if (tps >= 19) return `§a${tps.toFixed(2)}`;
+                if (tps >= 15) return `§e${tps.toFixed(2)}`;
+                return `§c${tps.toFixed(2)}`;
+            };
+
+            // 計測結果をチャットに表示
+            player.sendMessage("§a[MSS]§l§b--- TPS計測結果（10秒間） ---");
+            player.sendMessage(`§e§l平均TPS: ${colorize(avgTps)}`);
+            player.sendMessage(`§e最小TPS: ${colorize(minTps)}`);
+            player.sendMessage(`§e最大TPS: ${colorize(maxTps)}`);
+            player.sendMessage(`§7目安: 19~↑:軽い 15~18:やや重い ↓~14:重い`);
+            player.sendMessage("§b---------------------------");
+        }
+    }, 20); // 20tick = 理論上1秒間隔
 }

@@ -8,6 +8,7 @@
       }
     },
     "components": {
+      "minecraft:allow_off_hand": true,
       "minecraft:icon": "nacotest",
       "minecraft:display_name": {
         "value": "Naco Test Item"

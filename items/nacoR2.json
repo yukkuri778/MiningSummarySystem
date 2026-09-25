@@ -5,6 +5,7 @@
       "identifier": "naco:naco_R2"
     },
     "components": {
+      "minecraft:allow_off_hand": true,
       "minecraft:icon": "nacoR2",
       "minecraft:display_name": {
         "value": "§5R§f「おはなのおいすいいにおい」"

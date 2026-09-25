@@ -5,6 +5,7 @@
       "identifier": "naco:naco_N3"
     },
     "components": {
+      "minecraft:allow_off_hand": true,
       "minecraft:icon": "nacoN3",
       "minecraft:display_name": {
         "value": "§8N§f「マフラーあみあみ」"

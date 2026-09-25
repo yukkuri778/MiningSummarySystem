@@ -5,6 +5,7 @@
       "identifier": "naco:naco_N2"
     },
     "components": {
+      "minecraft:allow_off_hand": true,
       "minecraft:icon": "nacoN2",
       "minecraft:display_name": {
         "value": "§8N§f「はいっ！ポーズ！」"

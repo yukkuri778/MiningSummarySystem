@@ -5,6 +5,7 @@
       "identifier": "naco:naco_N1"
     },
     "components": {
+      "minecraft:allow_off_hand": true,
       "minecraft:icon": "nacoN1",
       "minecraft:display_name": {
         "value": "§8N§f「たべたたべたぁ...」"

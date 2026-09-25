@@ -5,6 +5,7 @@
       "identifier": "naco:naco_HR1"
     },
     "components": {
+      "minecraft:allow_off_hand": true,
       "minecraft:icon": "nacoHR1",
       "minecraft:display_name": {
         "value": "§gHR§f「なこち」"

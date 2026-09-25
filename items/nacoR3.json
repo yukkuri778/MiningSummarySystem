@@ -5,6 +5,7 @@
       "identifier": "naco:naco_R3"
     },
     "components": {
+      "minecraft:allow_off_hand": true,
       "minecraft:icon": "nacoR3",
       "minecraft:display_name": {
         "value": "§5R§f「とぶチューリップ」"

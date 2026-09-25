@@ -5,6 +5,7 @@
       "identifier": "naco:naco_S2"
     },
     "components": {
+      "minecraft:allow_off_hand": true,
       "minecraft:icon": "nacoS2",
       "minecraft:display_name": {
         "value": "§tSecret§f「みんなでほわほわ」"

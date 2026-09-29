@@ -560,26 +560,6 @@ world.afterEvents.itemUse.subscribe(event => {
         startChestRoulette(source);
         sendLog(`アイテム使用：${source.name}, ${itemStack.typeId}`);
     }
-    // イラスト（naco:）を右クリックで左手（オフハンド）に持ち替え
-    else if (itemStack.typeId.startsWith('naco:')) {
-        system.run(() => {
-            const equippable = source.getComponent('minecraft:equippable');
-            if (!equippable) return;
-            const mainSlot = equippable.getEquipmentSlot(EquipmentSlot.Mainhand);
-            const offSlot = equippable.getEquipmentSlot(EquipmentSlot.Offhand);
-            const mainItem = mainSlot.getItem();
-            if (!mainItem || !mainItem.typeId.startsWith('naco:')) return;
-            // 左手に既にあるアイテムとメインハンドを入れ替える
-            const offItem = offSlot.getItem();
-            offSlot.setItem(mainItem);
-            // 左手に入らなかった場合は何もしない（アイテム消失防止）
-            if (offSlot.getItem()?.typeId !== mainItem.typeId) {
-                offSlot.setItem(offItem);
-                return;
-            }
-            mainSlot.setItem(offItem);
-        });
-    }
     // 時計使用でアクションバー表示を切り替え
     else if (itemStack.typeId === 'minecraft:clock') {
         let currentStatus = source.getDynamicProperty(ACTION_BAR_ENABLED_PROP);

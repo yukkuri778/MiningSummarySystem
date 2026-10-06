@@ -1,0 +1,15 @@
+{
+  "format_version": "1.21.10",
+  "minecraft:item": {
+    "description": {
+      "identifier": "naco:naco_HW2026_HR1"
+    },
+    "components": {
+      "minecraft:allow_off_hand": true,
+      "minecraft:icon": "nacoHW2026HR1",
+      "minecraft:display_name": {
+        "value": "§gHR§f「たぶんにわとりくん」"
+      }
+    }
+  }
+}

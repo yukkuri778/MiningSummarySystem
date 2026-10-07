@@ -256,7 +256,7 @@ export class NacoRoulette {
 
             // HR (ハイパーレア) または secret (シークレット) が当選した場合のみ、ワールド内の全プレイヤーにチャットで告知とサウンド再生を行う
             if (symbol.id === "HR" || symbol.id === "secret") {
-                world.sendMessage(`§a[MSS] §r§f${player.name}さんがイラストガチャで §l${symbol.title}§r§f を当てました！おめでとうございます！`);
+                world.sendMessage(`§a[MSS] §r§f${player.name}さんがハロウィンイラストガチャで §l${symbol.title}§r§f を当てました！おめでとうございます！`);
                 
                 // 全プレイヤーに対して当選時の効果音を再生する（どこにいても聞こえるように個別再生）
                 if (symbol.sound) {

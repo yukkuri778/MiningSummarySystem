@@ -25,12 +25,16 @@ const SYMBOL_TABLE = [
         id: "secret",
         weight: 5, 
         display: "§tS§r",
-        // ハロウィン2026 シークレット（2種）
+        // ハロウィン2026 シークレット（6種）
         commands: [
             "give @s naco:naco_HW2026_S1 1",
-            "give @s naco:naco_HW2026_S2 1"
+            "give @s naco:naco_HW2026_S2 1",
+            "give @s naco:naco_HW2026_S3 1",
+            "give @s naco:naco_HW2026_S4 1",
+            "give @s naco:naco_HW2026_S5 1",
+            "give @s naco:naco_HW2026_S6 1"
         ],
-        sound: "random.totem",
+        sound: "random.levelup",
         title: "§6§l!!SECRET!!",
         subtitle: "§eシークレット大当たり！"
     },

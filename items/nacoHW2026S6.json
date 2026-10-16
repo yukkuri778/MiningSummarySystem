@@ -1,0 +1,15 @@
+{
+  "format_version": "1.21.10",
+  "minecraft:item": {
+    "description": {
+      "identifier": "naco:naco_HW2026_S6"
+    },
+    "components": {
+      "minecraft:allow_off_hand": true,
+      "minecraft:icon": "nacoHW2026S6",
+      "minecraft:display_name": {
+        "value": "§6【限定】 §tSecret§f「私と一緒に楽しいハロウィーン過ごしませんか？」"
+      }
+    }
+  }
+}

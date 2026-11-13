@@ -23,76 +23,65 @@ const CONFIG = {
 const SYMBOL_TABLE = [
     {
         id: "secret",
-        weight: 5, 
+        weight: 0.5, 
         display: "§tS§r",
-        // ハロウィン2026 シークレット（6種）
         commands: [
-            "give @s naco:naco_HW2026_S1 1",
-            "give @s naco:naco_HW2026_S2 1",
-            "give @s naco:naco_HW2026_S3 1",
-            "give @s naco:naco_HW2026_S4 1",
-            "give @s naco:naco_HW2026_S5 1",
-            "give @s naco:naco_HW2026_S6 1"
+            "give @s naco:naco_S1 1",
+            "give @s naco:naco_S2 1"
         ],
-        sound: "random.levelup",
+        sound: "random.totem",
         title: "§6§l!!SECRET!!",
         subtitle: "§eシークレット大当たり！"
     },
     {
         id: "HR",
-        weight: 10,
+        weight: 3,
         display: "§gHR§r",
-        // ハロウィン2026 ハイパーレア（5種）
         commands: [
-            "give @s naco:naco_HW2026_HR1 1",
-            "give @s naco:naco_HW2026_HR2 1",
-            "give @s naco:naco_HW2026_HR3 1",
-            "give @s naco:naco_HW2026_HR4 1",
-            "give @s naco:naco_HW2026_HR5 1"
+            "give @s naco:naco_HR1 1",
+            "give @s naco:naco_HR2 1"
         ],
         sound: "random.levelup",
         title: "§gHR",
         subtitle: "§gハイパーレアが当たった！"
     },
     {
-        // 旧SSR枠（ダイヤ等の排出）をハロウィン2026のSR枠に置き換え。
-        // 重みは旧SSR枠の設定値（0）を引き継いでいるため、現状は排出されない。
-        // SRを排出させる場合は weight を 0 より大きい値に変更すること。
-        id: "SR",
-        weight: 35,
-        display: "§bSR§r",
-        // ハロウィン2026 スーパーレア（2種）
+        id: "SSR",
+        weight: 0,
+        display: "§bSSR§r",
         commands: [
-            "give @s naco:naco_HW2026_SR1 1",
-            "give @s naco:naco_HW2026_SR2 1"
+            "give @s diamond 1",
+            "give @s emerald 5",
+            "give @s gold_ingot 10"
         ],
         sound: "random.levelup",
-        title: "§bSR",
-        subtitle: "§bスーパーレアが当たった！"
+        title: "§bDiamond!",
+        subtitle: "SSRが当たった！"
     },
     {
         id: "Rare",
-        weight: 50,
+        weight: 26.5,
         display: "§cR§r",
-        // ハロウィン2026 レア（4種）
         commands: [
-            "give @s naco:naco_HW2026_R1 1",
-            "give @s naco:naco_HW2026_R2 1",
-            "give @s naco:naco_HW2026_R3 1",
-            "give @s naco:naco_HW2026_R4 1"
+            "give @s naco:naco_R1 1",
+            "give @s naco:naco_R2 1",
+            "give @s naco:naco_R3 1",
+            "give @s naco:naco_R4 1"
         ],
         sound: "random.orb",
         title: "§cR",
         subtitle: "レアが当たった！"
     },
     {
-        // ハロウィン2026にはノーマル（N）アイテムが存在しないため、
-        // 重みを 0 にしてリールにも抽選結果にも出現しないよう無効化している。
-        // 旧ノーマル排出（naco_N1〜N4）は削除済み。
         id: "Normal",
-        weight: 0,
+        weight: 70,
         display: "§8N§r",
-        commands: [],
+        commands: [
+            "give @s naco:naco_N1 1",
+            "give @s naco:naco_N2 1",
+            "give @s naco:naco_N3 1",
+            "give @s naco:naco_N4 1"
+        ],
         sound: "random.break",
         title: "§8N",
         subtitle: "ノーマルが当たった！"
@@ -260,7 +249,7 @@ export class NacoRoulette {
 
             // HR (ハイパーレア) または secret (シークレット) が当選した場合のみ、ワールド内の全プレイヤーにチャットで告知とサウンド再生を行う
             if (symbol.id === "HR" || symbol.id === "secret") {
-                world.sendMessage(`§a[MSS] §r§f${player.name}さんがハロウィンイラストガチャで §l${symbol.title}§r§f を当てました！おめでとうございます！`);
+                world.sendMessage(`§a[MSS] §r§f${player.name}さんがイラストガチャで §l${symbol.title}§r§f を当てました！おめでとうございます！`);
                 
                 // 全プレイヤーに対して当選時の効果音を再生する（どこにいても聞こえるように個別再生）
                 if (symbol.sound) {
